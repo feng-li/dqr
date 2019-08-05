@@ -70,7 +70,7 @@ onestepEstimate <- function(X, Y, k, Tau){
   # estimate kernel density at 0
   IQR <- quantile(error_in_Q)[4] - quantile(error_in_Q)[2]
   A <- min(sd(error_in_Q), IQR/1.34) # 文章里写的1.34是怎么来的。。
-  h <- 0.9 * A * n^(-1/5)   ######只有h是由w来的
+  h <- 0.9 * A * n^(-1/5) 
   f0 <- sum(G_kernel(error/h)) / (N*h)
   
   beta_one_step <- beta_pilot + (1/f0) * solve(t(X) %*% X) %*% (t(X) %*% (Tau - 1*(error<=0)))
