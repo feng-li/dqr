@@ -11,6 +11,9 @@ source("utils.R")
 
 # load packages
 library(tidyverse)
+library(MASS)
+library(plyr)
+library(quantreg)
 
 # set random seed
 set.seed(2019)
