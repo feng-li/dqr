@@ -109,4 +109,4 @@ RMSE %>%
           legend.key = element_blank(),
           axis.line = element_line(color = "black")) +
     # save plot
-    ggsave(filename = "RMSE.png", width = 10, height = 6)
+    ggsave(filename = "RMSE.png", width = 8, height = 7)
