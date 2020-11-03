@@ -1,18 +1,18 @@
 #! /usr/bin/python3
 
-'''Script to process the us used car data.
+'''Script to process the us used car data from kaggle.
 
+DATA SOURCE:
+        https://www.kaggle.com/ananaymital/us-used-cars-dataset
 
 USAGE:
         python3 clean_used_car_data.py > used_cars_data_clean.csv
 
 '''
 
-
 import os
 import zipfile
 import re
-from csv import reader
 
 data_file = os.path.expanduser(
     "~/running/data/used_cars_data/used_cars_data.zip")
@@ -202,9 +202,6 @@ with zipfile.ZipFile(data_file, 'r') as z:
 
             # 65 Year
 
-            if line_count == 10000 or len(buffer) == 0:
-                break
-
+            # Print to csv file
             line_out = [line_raw[i].lower() for i in columns_keep_index]
-
             print(",".join(line_out))
