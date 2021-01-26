@@ -13,7 +13,7 @@ USAGE:
 import os
 import zipfile
 import re
-# import logging
+import logging
 from tqdm import tqdm
 
 data_file = os.path.expanduser(
@@ -124,7 +124,7 @@ with zipfile.ZipFile(data_file, 'r') as z:
             if len(line_raw[22]) > 0:
                 x = line_raw[22].split()[0]
                 x = x.replace('--', '')
-                line_raw[21] = x
+                line_raw[22] = x
 
             # 24 has_accidents 3 cat cols +3
             line_raw[24] = line_raw[24].replace(' ', '')
