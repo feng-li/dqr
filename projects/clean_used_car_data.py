@@ -13,10 +13,15 @@ USAGE:
 import os
 import zipfile
 import re
+# import logging
+from tqdm import tqdm
 
 data_file = os.path.expanduser(
     "~/running/data/used_cars_data/used_cars_data.zip")
 header = True
+
+total = 3000000  # only used in the progress bar
+pbar = tqdm(total = total)
 
 columns_raw = [
     'vin', 'back_legroom', 'bed', 'bed_height', 'bed_length', 'body_type',
@@ -60,6 +65,7 @@ columns_split = re.compile(r",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")
 
 line_count = 0
 bad_lines = 0
+
 with zipfile.ZipFile(data_file, 'r') as z:
     data_name = z.namelist()[0]
     with z.open(data_name, 'r') as f:
@@ -69,6 +75,8 @@ with zipfile.ZipFile(data_file, 'r') as z:
             line_raw = re.split(columns_split, buffer)  # split to list
 
             line_count += 1
+            pbar.update(1)
+
             if line_count == 1:
                 if header is True:
                     header_name = line_raw
@@ -85,8 +93,8 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # 1 back_legroom
             if len(line_raw[1]) > 0:
                 x = line_raw[1].split()[0]
-            x = x.replace('--', '')
-            line_raw[1] = x
+                x = x.replace('--', '')
+                line_raw[1] = x
 
             # 5 body_type
             line_raw[5] = line_raw[5].replace(' ', '')
@@ -104,19 +112,19 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # 14 engine_displacement
 
             # 16 exterior_color
-            line_raw[16] = line_raw[16].split(" ")[0]
+            line_raw[16] = re.split('[, ;]', line_raw[16])[0]
 
             # 21 front_legroom
             if len(line_raw[21]) > 0:
                 x = line_raw[21].split()[0]
-            x = x.replace('--', '')
-            line_raw[21] = x
+                x = x.replace('--', '')
+                line_raw[21] = x
 
             # 22 fuel_tank_volume
             if len(line_raw[22]) > 0:
                 x = line_raw[22].split()[0]
-            x = x.replace('--', '')
-            line_raw[21] = x
+                x = x.replace('--', '')
+                line_raw[21] = x
 
             # 24 has_accidents 3 cat cols +3
             line_raw[24] = line_raw[24].replace(' ', '')
@@ -126,15 +134,15 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # 25 height
             if len(line_raw[25]) > 0:
                 x = line_raw[25].split()[0]
-            x = x.replace('--', '')
-            line_raw[25] = x
+                x = x.replace('--', '')
+                line_raw[25] = x
 
             # 26 highway_fuel_economy
 
             # 27 horsepower
 
             # 28 interior_color
-            line_raw[28] = line_raw[28].split(" ")[0]
+            line_raw[28] = re.split('[, ;]', line_raw[28])[0]
 
             # 29 isCab
             line_raw[29] = line_raw[24].replace(' ', '')
@@ -144,8 +152,8 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # 35 length
             if len(line_raw[35]) > 0:
                 x = line_raw[35].split()[0]
-            x = x.replace('--', '')
-            line_raw[35] = x
+                x = x.replace('--', '')
+                line_raw[35] = x
 
             # 37 listing_color
             line_raw[37] = line_raw[37].split(" ")[0]
@@ -157,8 +165,8 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # 43 maximum_seating
             if len(line_raw[43]) > 0:
                 x = line_raw[43].split()[0]
-            x = x.replace('--', '')
-            line_raw[43] = x
+                x = x.replace('--', '')
+                line_raw[43] = x
 
             # 44 mileage
 
@@ -185,19 +193,19 @@ with zipfile.ZipFile(data_file, 'r') as z:
             line_raw[61] = line_raw[61].replace(' ', '')
             if len(line_raw[61]) == 0:
                 line_raw[61] = 'unknown'
-            line_raw[61] = line_raw[61].replace('4WD', 'AWD')
+                line_raw[61] = line_raw[61].replace('4WD', 'AWD')
 
             # 63 wheelbase
             if len(line_raw[63]) > 0:
                 x = line_raw[63].split()[0]
-            x = x.replace('--', '')
-            line_raw[63] = x
+                x = x.replace('--', '')
+                line_raw[63] = x
 
             # 64 width
             if len(line_raw[64]) > 0:
                 x = line_raw[64].split()[0]
-            x = x.replace('--', '')
-            # x = float(x)
+                x = x.replace('--', '')
+                # x = float(x)
             line_raw[64] = x
 
             # 65 Year
