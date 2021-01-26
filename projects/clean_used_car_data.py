@@ -47,7 +47,7 @@ columns_keep = [
     'engine_type', 'exterior_color', 'franchise_dealer', 'front_legroom',
     'fuel_tank_volume', 'fuel_type', 'has_accidents', 'height',
     'highway_fuel_economy', 'horsepower', 'interior_color', 'isCab',
-    'latitude', 'listed_date', 'listing_color', 'listing_id', 'longitude',
+    'latitude', 'length', 'listed_date', 'listing_color', 'listing_id', 'longitude',
     'major_options', 'make_name', 'maximum_seating', 'mileage', 'model_name',
     'owner_count', 'power', 'price', 'savings_amount', 'seller_rating',
     'sp_id', 'sp_name', 'torque', 'transmission', 'transmission_display',
@@ -72,6 +72,7 @@ with zipfile.ZipFile(data_file, 'r') as z:
         while True:
             # read a line, remove the trailing \n, decode byte type to string
             buffer = f.readline().strip().decode("utf-8")
+
             line_raw = re.split(columns_split, buffer)  # split to list
 
             line_count += 1
@@ -88,6 +89,9 @@ with zipfile.ZipFile(data_file, 'r') as z:
             if len(line_raw) != len(columns_raw):
                 bad_lines += 1
                 continue
+
+            # Remove unused symbols
+            # line_raw = [x.replace('"', '') for x in line_raw]
 
             # processing data
             # 1 back_legroom
@@ -109,7 +113,15 @@ with zipfile.ZipFile(data_file, 'r') as z:
             _description = re.compile('".*?"')
             line_raw[12] = re.sub(_description, '', line_raw[12])
 
+            # 13 engine_cylinders
+            if len(line_raw[13]) > 0:
+                line_raw[13] = line_raw[13].split()[0]
+
             # 14 engine_displacement
+
+            # 15 engine_type
+            if len(line_raw[15]) > 0:
+                line_raw[15] = line_raw[15].split()[0]
 
             # 16 exterior_color
             line_raw[16] = re.split('[, ;]', line_raw[16])[0]
@@ -142,10 +154,13 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # 27 horsepower
 
             # 28 interior_color
-            line_raw[28] = re.split('[, ;]', line_raw[28])[0]
+            line28 = re.split('[, ;]', line_raw[28])[0]
+            # line28 = line_raw[28].split(" ")[0]
+            line28 = line28.replace('"', '')
+            line_raw[28] = line28
 
             # 29 isCab
-            line_raw[29] = line_raw[24].replace(' ', '')
+            line_raw[29] = line_raw[29].replace(' ', '')
             if len(line_raw[29]) == 0:
                 line_raw[29] = 'unknown'
 
@@ -154,6 +169,12 @@ with zipfile.ZipFile(data_file, 'r') as z:
                 x = line_raw[35].split()[0]
                 x = x.replace('--', '')
                 line_raw[35] = x
+
+            # 36 listed_date
+            if len(line_raw[36]) > 0:
+                x = line_raw[36].split("-")[1]
+                line_raw[36] = x
+
 
             # 37 listing_color
             line_raw[37] = line_raw[37].split(" ")[0]
@@ -171,6 +192,8 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # 44 mileage
 
             # 46 owner_count
+            if len(line_raw[46]) == 0:
+                line_raw[46] = 'unknown'
 
             # 47 power
             _power = re.compile('"(\d+) hp @.*?RPM"')
@@ -191,9 +214,10 @@ with zipfile.ZipFile(data_file, 'r') as z:
 
             # 61 wheel_system
             line_raw[61] = line_raw[61].replace(' ', '')
+            line_raw[61] = line_raw[61].replace('4WD', 'AWD')
             if len(line_raw[61]) == 0:
                 line_raw[61] = 'unknown'
-                line_raw[61] = line_raw[61].replace('4WD', 'AWD')
+
 
             # 63 wheelbase
             if len(line_raw[63]) > 0:
