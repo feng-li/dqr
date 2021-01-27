@@ -46,18 +46,6 @@ from dlsa.sdummies import get_sdummies
 from dlsa.utils import clean_airlinedata, insert_partition_id_pdf
 from dlsa.utils_spark import convert_schema
 
-# from rpy2.robjects import numpy2ri
-
-# FIXME: PATH BUG
-# spark.sparkContext.addPyFile("/home/lifeng/code/dlsa/models.py")
-# spark.sparkContext.addPyFile("/home/lifeng/code/dlsa/utils.py")
-
-# BASH compatible
-# spark.sparkContext.addPyFile(os.path.dirname(os.path.abspath(__file__)) + "/models.py")
-
-# Python compatible
-# spark.sparkContext.addPyFile(os.path.dirname(os.path.abspath(__file__)) + "/dlsa/models.py")
-
 # https://docs.azuredatabricks.net/spark/latest/spark-sql/udf-python-pandas.html#setting-arrow-batch-size
 # spark.conf.set("spark.sql.execution.arrow.maxRecordsPerBatch", 10000) # default
 
@@ -72,86 +60,83 @@ from dlsa.utils_spark import convert_schema
 #-----------------------------------------------------------------------------------------
 using_data = "real_hdfs"  # ["simulated_pdf", "real_pdf", "real_hdfs"
 partition_method = "systematic"
-model_saved_file_name = '~/running/logistic_dlsa_model_' + time.strftime(
+model_saved_file_name = '~/running/dqr_model_' + time.strftime(
     "%Y-%m-%d-%H:%M:%S", time.localtime()) + '.pkl'
 
 # If save data descriptive statistics
 data_info_path = {
     'save': True,
-    'path': "~/running/data/airdelay/data_info.csv"
+    'path': "~/running/data/used_cars_data/data_info.csv"
 }
 
 # Model settings
 #-----------------------------------------------------------------------------------------
 fit_intercept = True
 # fit_algorithms = ['dlsa_logistic', 'spark_logistic']
-fit_algorithms = ['dlsa_logistic']
+fit_algorithms = ['dqr']
 # fit_algorithms = ['spark_logistic']
 
-# Settings for using simulated data
+#  Settings for using real data
 #-----------------------------------------------------------------------------------------
-if using_data in ["simulated_pdf"]:
+if using_data in ["real_hdfs"]:
+#-----------------------------------------------------------------------------------------
+    file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
-    n_files = 100  # Sequential loop to avoid Spark OUT_OF_MEM problem
-    partition_num_sub = 20
-    sample_size_sub = 100000
-    sample_size_per_partition = sample_size_sub / partition_num_sub
-    p = 200
-    Y_name = "label"
-    dummy_info = []
-    data_info = []
-    # convert_dummies = []
-    dummy_columns = []
+    usecols_x = [ 'mileage', 'year', 'exterior_color']
 
-elif using_data in ["real_pdf", "real_hdfs"]:
-    #  Settings for using real data
-    #-----------------------------------------------------------------------------------------
-    # file_path = ['~/running/data_raw/xa' + str(letter) + '.csv.bz2' for letter in string.ascii_lowercase[0:21]] # local file
+    schema_sdf = StructType([ StructField('vin', StringType(), True),
+                              StructField('back_legroom', DoubleType(), True),
+                              StructField('body_type', StringType(), True),
+                              StructField('city', StringType(), True),
+                              StructField('city_fuel_economy', DoubleType(), True),
+                              StructField('daysonmarket', DoubleType(), True),
+                              StructField('dealer_zip', DoubleType(), True),
+                              StructField('engine_cylinders', StringType(), True),
+                              StructField('engine_displacement', DoubleType(), True),
+                              StructField('engine_type', StringType(), True),
+                              StructField('exterior_color', StringType(), True),
+                              StructField('franchise_dealer', StringType(), True),
+                              StructField('front_legroom', DoubleType(), True),
+                              StructField('fuel_tank_volume', DoubleType(), True),
+                              StructField('fuel_type', StringType(), True),
+                              StructField('has_accidents', StringType(), True),
+                              StructField('height', DoubleType(), True),
+                              StructField('highway_fuel_economy', DoubleType(), True),
+                              StructField('horsepower', DoubleType(), True),
+                              StructField('interior_color', StringType(), True),
+                              StructField('isCab', StringType(), True),
+                              StructField('latitude', DoubleType(), True),
+                              StructField('length', DoubleType(), True),
+                              StructField('listed_date', DoubleType(), True),
+                              StructField('listing_color', StringType(), True),
+                              StructField('listing_id', StringType(), True),
+                              StructField('longitude', DoubleType(), True),
+                              StructField('major_options', StringType(), True),
+                              StructField('make_name', StringType(), True),
+                              StructField('maximum_seating', DoubleType(), True),
+                              StructField('mileage', DoubleType(), True),
+                              StructField('model_name', StringType(), True),
+                              StructField('owner_count', DoubleType(), True),
+                              StructField('power', DoubleType(), True),
+                              StructField('price', DoubleType(), True),
+                              StructField('savings_amount', DoubleType(), True),
+                              StructField('seller_rating', DoubleType(), True),
+                              StructField('sp_id', StringType(), True),
+                              StructField('sp_name', StringType(), True),
+                              StructField('torque', DoubleType(), True),
+                              StructField('transmission', StringType(), True),
+                              StructField('transmission_display', StringType(), True),
+                              StructField('trimId', StringType(), True),
+                              StructField('trim_name', StringType(), True),
+                              StructField('wheel_system', StringType(), True),
+                              StructField('wheelbase', DoubleType(), True),
+                              StructField('width', DoubleType(), True),
+                              StructField('year', DoubleType(), True) ])
 
-    # file_path = ['/running/data_raw/xa' + str(letter) + '.csv' for letter in string.ascii_lowercase[0:1]] # HDFS file
-
-    # file_path = ['/data/airdelay_full.csv']  # HDFS file
-    file_path = ['/data/airdelay_small.csv']  # HDFS file
-
-    usecols_x = [ 'Year', 'Month', 'DayofMonth', 'DayOfWeek', 'DepTime', 'CRSDepTime',
-                  'CRSArrTime', 'UniqueCarrier', 'ActualElapsedTime', 'Origin', 'Dest', 'Distance' ]
-
-    schema_sdf = StructType([ StructField('Year', IntegerType(), True),
-                              StructField('Month', IntegerType(), True),
-                              StructField('DayofMonth', IntegerType(), True),
-                              StructField('DayOfWeek', IntegerType(), True),
-                              StructField('DepTime', DoubleType(), True),
-                              StructField('CRSDepTime', DoubleType(), True),
-                              StructField('ArrTime', DoubleType(), True),
-                              StructField('CRSArrTime', DoubleType(), True),
-                              StructField('UniqueCarrier', StringType(), True),
-                              StructField('FlightNum', StringType(), True),
-                              StructField('TailNum', StringType(), True),
-                              StructField('ActualElapsedTime', DoubleType(), True),
-                              StructField('CRSElapsedTime', DoubleType(), True),
-                              StructField('AirTime', DoubleType(), True),
-                              StructField('ArrDelay', DoubleType(), True),
-                              StructField('DepDelay', DoubleType(), True),
-                              StructField('Origin', StringType(), True),
-                              StructField('Dest', StringType(), True),
-                              StructField('Distance', DoubleType(), True),
-                              StructField('TaxiIn', DoubleType(), True),
-                              StructField('TaxiOut', DoubleType(), True),
-                              StructField('Cancelled', IntegerType(), True),
-                              StructField('CancellationCode', StringType(), True),
-                              StructField('Diverted', IntegerType(), True),
-                              StructField('CarrierDelay', DoubleType(), True),
-                              StructField('WeatherDelay', DoubleType(), True),
-                              StructField('NASDelay', DoubleType(), True),
-                              StructField('SecurityDelay', DoubleType(), True),
-                              StructField('LateAircraftDelay', DoubleType(), True) ])
-    # s = spark.read.schema("col0 INT, col1 DOUBLE")
-
-    # dummy_info_path = "~/running/data/airdelay/dummy_info.pkl"
     dummy_info_path = {
         # 'save': True,  # If False, load it from the path
         'save': False,  # If False, load it from the path
-        'path': "~/running/data/airdelay/dummy_info_small.pkl"
+        'path': "~/running/data/used_cars_data/dummy_info.pkl"
         # 'path': "~/running/data/airdelay/dummy_info.pkl"
     }
 
@@ -163,7 +148,7 @@ elif using_data in ["real_pdf", "real_hdfs"]:
             open(os.path.expanduser(dummy_info_path["path"]), "rb"))
 
 
-    dummy_columns = ['Month', 'DayOfWeek', 'UniqueCarrier', 'Origin', 'Dest']
+    dummy_columns = ['exterior_color', 'has_accidents']
     # Dummy factors to drop as the baseline when fitting the intercept
     if fit_intercept:
         dummy_factors_baseline = ['Month_1', 'DayOfWeek_1', 'UniqueCarrier_000_OTHERS',
@@ -171,14 +156,14 @@ elif using_data in ["real_pdf", "real_hdfs"]:
     else:
         dummy_factors_baseline = []
 
-    dummy_keep_top = [1, 1, 0.8, 0.9, 0.9]
+    dummy_keep_top = [0.8, 0.8]
 
     n_files = len(file_path)
     partition_num_sub = []
     max_sample_size_per_sdf = 100000  # No effect with `real_hdfs` data
-    sample_size_per_partition = 1000000
+    sample_size_per_partition = 100000
 
-    Y_name = "ArrDelay"
+    Y_name = "price"
     sample_size_sub = []
     memsize_sub = []
 
@@ -191,111 +176,40 @@ loop_counter = 0
 for file_no_i in range(n_files):
     tic_2sdf = time.perf_counter()
 
-    if using_data == "simulated_pdf":
-        if file_no_i == 0:
-            # To test performance, we only simulate one subset of data and replicated it.
-            data_pdf_i = simulate_logistic(sample_size_sub[0], p,
-                                           partition_method, partition_num_sub)
-            memsize_sub0 = sys.getsizeof(data_pdf_i)
-        else:
-            sample_size_sub.append(sample_size_sub[0])
-            memsize_sub.append(memsize_sub0)
-            partition_num_sub.append(partition_num_sub[0])
-
-    elif using_data == "real_pdf":  # Read real data
-        data_pdf_i0 = clean_airlinedata(os.path.expanduser(
-            file_path[file_no_i]),
-                                        fit_intercept=fit_intercept)
-
-        # Create an full-column empty DataFrame and resize current subset
-        edf = pd.DataFrame(
-            columns=list(set(dummy_column_names) - set(data_pdf_i0.columns)))
-        data_pdf_i = data_pdf_i0.append(edf, sort=True)
-        del data_pdf_i0
-
-        # Replace append-generated NaN with 0
-        data_pdf_i.fillna(0, inplace=True)
-
-        partition_num_sub.append(
-            ceil(data_pdf_i.shape[0] / sample_size_per_partition))
-        data_pdf_i = insert_partition_id_pdf(data_pdf_i,
-                                             partition_num_sub[file_no_i],
-                                             partition_method)
-
-        sample_size_sub.append(data_pdf_i.shape[0])
-        memsize_sub.append(sys.getsizeof(data_pdf_i))
-
     ## Using HDFS data
     ## ------------------------------
-    elif using_data == "real_hdfs":
-        isub = 0  # fixed, never changed
+    isub = 0  # fixed, never changed
 
-        # Read HDFS to Spark DataFrame and clean NAs
-        data_sdf_i = spark.read.csv(file_path[file_no_i],
-                                    header=True,
-                                    schema=schema_sdf)
-        data_sdf_i = data_sdf_i.select(usecols_x + [Y_name])
-        data_sdf_i = data_sdf_i.dropna()
+    # Read HDFS to Spark DataFrame and clean NAs
+    data_sdf_i = spark.read.csv(file_path[file_no_i],
+                                header=True,
+                                schema=schema_sdf)
+    data_sdf_i = data_sdf_i.select(usecols_x + [Y_name])
+    data_sdf_i = data_sdf_i.dropna()
 
-        # Define or transform response variable. Or use
-        # https://spark.apache.org/docs/latest/ml-features.html#binarizer
-        data_sdf_i = data_sdf_i.withColumn(
-            Y_name,
-            F.when(data_sdf_i[Y_name] > 0, 1).otherwise(0))
+    # Define or transform response variable. Or use
+    # https://spark.apache.org/docs/latest/ml-features.html#binarizer
+    data_sdf_i = data_sdf_i.withColumn(
+        Y_name,
+        F.when(data_sdf_i[Y_name] > 0, 1).otherwise(0))
 
-        sample_size_sub.append(data_sdf_i.count())
-        partition_num_sub.append(
-            ceil(sample_size_sub[file_no_i] / sample_size_per_partition))
+    sample_size_sub.append(data_sdf_i.count())
+    partition_num_sub.append(
+        ceil(sample_size_sub[file_no_i] / sample_size_per_partition))
 
-        ## Add partition ID
-        data_sdf_i = data_sdf_i.withColumn(
-            "partition_id",
-            monotonically_increasing_id() % partition_num_sub[file_no_i])
+    ## Add partition ID
+    data_sdf_i = data_sdf_i.withColumn(
+        "partition_id",
+        monotonically_increasing_id() % partition_num_sub[file_no_i])
 
-        ## Create dummy variables We could do it either directly with
-        ## https://stackoverflow.com/questions/35879372/pyspark-matrix-with-dummy-variables
-        ## or we do it within grouped dlsa (default)
+    ## Create dummy variables We could do it either directly with
+    ## https://stackoverflow.com/questions/35879372/pyspark-matrix-with-dummy-variables
+    ## or we do it within grouped dlsa (default)
 
 ##----------------------------------------------------------------------------------------
 ## MODEL FITTING ON PARTITIONED DATA
 ##----------------------------------------------------------------------------------------
 # Split the process into small subs if reading a real big DataFrame which my cause
-# MemoryError
-    if using_data in ["real_pdf", "simulated_pdf"]:
-        nsub = ceil(sample_size_sub[file_no_i] / max_sample_size_per_sdf)
-
-        for isub in range(nsub):
-
-            # Convert Pandas DataFrame to Spark DataFrame
-            idx_curr_sub = [
-                round(sample_size_sub[file_no_i] / nsub * isub),
-                round(sample_size_sub[file_no_i] / nsub * (isub + 1))
-            ]
-
-            data_sdf_isub = spark.createDataFrame(
-                data_pdf_i.iloc[idx_curr_sub[0]:idx_curr_sub[1], ])
-
-            # Union all sequential feeded pdf to sdf.
-            if isub == 0:
-                data_sdf_i = data_sdf_isub
-                # memsize_sub = sys.getsizeof(data_pdf_i)
-            else:
-                data_sdf_i = data_sdf_i.unionAll(data_sdf_isub)
-
-            loop_counter += 1
-            time_elapsed = time.perf_counter() - tic_2sdf
-            time_to_go = timedelta(seconds=time_elapsed / loop_counter *
-                                   (n_files * nsub - loop_counter))
-            print('Creating Spark DataFrame:\t' + str(isub) + '/' + str(nsub))
-            print('Time elapsed:\t' +
-                  str(timedelta(seconds=time.perf_counter() - tic_2sdf)) +
-                  '.\tTime to go:\t' + str(time_to_go))
-
-    time_2sdf_sub.append(time.perf_counter() - tic_2sdf)
-
-    ##----------------------------------------------------------------------------------------
-    ## MODELING ON PARTITIONED DATA
-    ##----------------------------------------------------------------------------------------
     # Load or Create descriptive statistics used for standardizing data.
     if data_info_path["save"] is True:
         # descriptive statistics
@@ -311,7 +225,7 @@ for file_no_i in range(n_files):
               data_info_path["path"])
 
     # Independent fit chunked data with UDF.
-    if 'dlsa_logistic' in fit_algorithms:
+    if 'dqr' in fit_algorithms:
         tic_repartition = time.perf_counter()
         data_sdf_i = data_sdf_i.repartition(partition_num_sub[file_no_i],
                                             "partition_id")
@@ -335,8 +249,7 @@ for file_no_i in range(n_files):
 
         # pdb.set_trace()
         # partition the data and run the UDF
-        model_mapped_sdf_i = data_sdf_i.groupby("partition_id").apply(
-            logistic_model_udf)
+        model_mapped_sdf_i = data_sdf_i.groupby("partition_id").apply(logistic_model_udf)
 
         # Union all sequential mapped results.
         if file_no_i == 0 and isub == 0:
@@ -348,10 +261,7 @@ for file_no_i in range(n_files):
 ##----------------------------------------------------------------------------------------
 ## AGGREGATING THE MODEL ESTIMATES
 ##----------------------------------------------------------------------------------------
-if using_data == "simulated_pdf":
-    p = data_pdf_i.shape[1]
-
-if 'dlsa_logistic' in fit_algorithms:
+if 'dqr' in fit_algorithms:
     # sample_size=model_mapped_sdf.count()
     sample_size = sum(sample_size_sub)
 
@@ -426,70 +336,11 @@ if 'dlsa_logistic' in fit_algorithms:
     print("\nDLSA Coefficients:\n")
     print(out_par.to_string())
 
-    # Verify with Pure R implementation.
-    # numpy2ri.activate()
-    # out_dlsa_r = dlsa_r(Sig_inv_=np.asarray(Sig_inv_beta.iloc[:, 2:]),
-    #                     beta_=np.asarray(Sig_inv_beta["beta_byOLS"]),
-    #                     sample_size=data_sdf.count(), intercept=False)
-    # numpy2ri.deactivate()
-
-    # out_dlsa = dlsa(Sig_inv_=Sig_inv,
-    #                 beta_=beta_byOLS,
-    #                 sample_size=data_sdf.count(), intercept=False)
-elif 'spark_logistic' in fit_algorithms:
-    data_sdf_i2, dummy_info = get_sdummies(sdf=data_sdf_i,
-                                          keep_top=dummy_keep_top,
-                                          replace_with="000_OTHERS",
-                                          dummy_columns=dummy_columns,
-                                           dummy_info=dummy_info,
-                                           dropLast=fit_intercept)
-
-    if dummy_info_path["save"] is True:
-        pickle.dump(dummy_info, open(os.path.expanduser(dummy_info_path["path"]), 'wb'))
-        print("dummy_info saved in:\t" + dummy_info_path["path"])
-
-
-    # Feature columns
-    features_x_name = list(set(usecols_x) - set(Y_name) - set(dummy_columns))
-    assembler_x = VectorAssembler(inputCols=features_x_name,
-                                  outputCol="features_x_raw")
-    data_sdf_i = assembler_x.transform(data_sdf_i)
-
-    # Standardized the non-categorical data.
-    scaler = StandardScaler(inputCol="features_x_raw",
-                            outputCol="features_x_std",
-                            withStd=True,
-                            withMean=True)
-    scalerModel = scaler.fit(data_sdf_i)
-    data_sdf_i = scalerModel.transform(data_sdf_i)
-
-    # Assemble all vectors
-    assembler_all = VectorAssembler(
-        inputCols=["features_x_std", "features_ONEHOT"], outputCol="features")
-    data_sdf_i = assembler_all.transform(data_sdf_i)
-
-    # Model specification
-    lr = SLogisticRegression(
-        labelCol=Y_name,
-        featuresCol="features",
-        fitIntercept=fit_intercept, # Already standardized with non-dummy columns
-        standardization=False
-    )  #, maxIter=100, regParam=0.3, elasticNetParam=0.8)
-
-    # Fit the model
-    lrModel = lr.fit(data_sdf_i)
-
-    # Calculate loglikelihood
-    prob = lrModel.summary.predictions.select("probability")
-    split_p0 = udf(lambda value: value[0].item(), FloatType())
-    split_p1 = udf(lambda value: value[1].item(), FloatType())
-
-    prob = prob.withColumn('p0', split_p0('probability')).withColumn(
-        'p1', split_p1('probability'))
-    prob = prob.withColumn("logdens", log(prob["p0"]) + log(prob["p1"]))
-    logLike = prob.select("logdens").groupby().sum()
-
     # Print results
     print(lrModel.intercept)
     print(lrModel.coefficients)
     logLike.show()
+
+
+elif 'qr_spark' in fit_algorithms:
+    logging.warning("not implemented!")
