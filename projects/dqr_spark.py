@@ -34,10 +34,6 @@ from pyspark.sql.types import *
 from pyspark.sql import functions as F
 from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id, log
 
-from pyspark.ml.classification import LogisticRegression as SLogisticRegression  # do not mixed with sklearn's logisticregression
-from pyspark.ml.linalg import Vectors
-from pyspark.ml.feature import VectorAssembler, StandardScaler
-
 # dlsa functions
 from dlsa.dlsa import dlsa, dlsa_mapred  #, dlsa_r
 from dlsa.models import simulate_logistic, logistic_model
@@ -45,6 +41,10 @@ from dlsa.model_eval import logistic_model_eval_sdf
 from dlsa.sdummies import get_sdummies
 from dlsa.utils import clean_airlinedata, insert_partition_id_pdf
 from dlsa.utils_spark import convert_schema
+
+
+# dqr
+from statsmodels.regression.quantile_regression import QuantReg
 
 # https://docs.azuredatabricks.net/spark/latest/spark-sql/udf-python-pandas.html#setting-arrow-batch-size
 # spark.conf.set("spark.sql.execution.arrow.maxRecordsPerBatch", 10000) # default
@@ -61,7 +61,7 @@ from dlsa.utils_spark import convert_schema
 using_data = "real_hdfs"  # ["simulated_pdf", "real_pdf", "real_hdfs"
 partition_method = "systematic"
 model_saved_file_name = '~/running/dqr_model_' + time.strftime(
-    "%Y-%m-%d-%H:%M:%S", time.localtime()) + '.pkl'
+    "%Y-%m-%d-%H.%M.%S", time.localtime()) + '.pkl'
 
 # If save data descriptive statistics
 data_info_path = {
@@ -74,6 +74,11 @@ data_info_path = {
 fit_intercept = True
 # fit_algorithms = ['dlsa_logistic', 'spark_logistic']
 fit_algorithms = ['dqr']
+
+dqr_conf = {
+    'pilot_sampler': 0.01,
+    'quantiles': [0.25, 0.5, 0.75]
+}
 # fit_algorithms = ['spark_logistic']
 
 #  Settings for using real data
@@ -83,6 +88,7 @@ if using_data in ["real_hdfs"]:
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
     usecols_x = [ 'mileage', 'year', 'exterior_color']
+    Y_name = "price"
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
                               StructField('back_legroom', DoubleType(), True),
@@ -135,9 +141,8 @@ if using_data in ["real_hdfs"]:
 
     dummy_info_path = {
         # 'save': True,  # If False, load it from the path
-        'save': False,  # If False, load it from the path
+        'save': True,  # If False, load it from the path
         'path': "~/running/data/used_cars_data/dummy_info.pkl"
-        # 'path': "~/running/data/airdelay/dummy_info.pkl"
     }
 
     if dummy_info_path["save"] is True:
@@ -160,10 +165,8 @@ if using_data in ["real_hdfs"]:
 
     n_files = len(file_path)
     partition_num_sub = []
-    max_sample_size_per_sdf = 100000  # No effect with `real_hdfs` data
     sample_size_per_partition = 100000
 
-    Y_name = "price"
     sample_size_sub = []
     memsize_sub = []
 
@@ -173,6 +176,8 @@ time_2sdf_sub = []
 time_repartition_sub = []
 
 loop_counter = 0
+
+file_no_i = 0
 for file_no_i in range(n_files):
     tic_2sdf = time.perf_counter()
 
@@ -186,12 +191,6 @@ for file_no_i in range(n_files):
                                 schema=schema_sdf)
     data_sdf_i = data_sdf_i.select(usecols_x + [Y_name])
     data_sdf_i = data_sdf_i.dropna()
-
-    # Define or transform response variable. Or use
-    # https://spark.apache.org/docs/latest/ml-features.html#binarizer
-    data_sdf_i = data_sdf_i.withColumn(
-        Y_name,
-        F.when(data_sdf_i[Y_name] > 0, 1).otherwise(0))
 
     sample_size_sub.append(data_sdf_i.count())
     partition_num_sub.append(
@@ -226,6 +225,22 @@ for file_no_i in range(n_files):
 
     # Independent fit chunked data with UDF.
     if 'dqr' in fit_algorithms:
+
+        # Step 0: Data transformation
+
+        # Step 1: Pilot Sampler
+        data_pilot_sdf_i = data_sdf_i.sample(withReplacement=False,
+                                             fraction=dqr_conf['pilot_sampler'])
+        data_pilot_pdf_i = data_pilot_sdf_i.toPandas()  # Send to master
+
+        dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name], exog=data_pilot_pdf_i['mileage'])
+        dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantiles'][0])
+
+        dqr_pilot_par = {
+            'bandwidth': dqr_pilot_res.bandwidth,
+            'params': dqr_pilot_res.params
+        }
+
         tic_repartition = time.perf_counter()
         data_sdf_i = data_sdf_i.repartition(partition_num_sub[file_no_i],
                                             "partition_id")
