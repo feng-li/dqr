@@ -70,8 +70,11 @@ with zipfile.ZipFile(data_file, 'r') as z:
     data_name = z.namelist()[0]
     with z.open(data_name, 'r') as f:
         while True:
+
             # read a line, remove the trailing \n, decode byte type to string
             buffer = f.readline().strip().decode("utf-8")
+            if len(buffer) == 0:
+                break  # Stop the program when reaching the end of file.
 
             line_raw = re.split(columns_split, buffer)  # split to list
 
@@ -88,7 +91,7 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # Skip bad lines
             if len(line_raw) != len(columns_raw):
                 bad_lines += 1
-                logging.warning("Total bad lines skipped:\t" + str(bad_lines))
+                logging.warning("Bad line at:\t" + str(line_count) + "\t Total bad lines skipped:\t" + str(bad_lines))
                 continue
 
             # Remove unused symbols
