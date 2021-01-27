@@ -20,7 +20,7 @@ data_file = os.path.expanduser(
     "~/running/data/used_cars_data/used_cars_data.zip")
 header = True
 
-total = 3000000  # only used in the progress bar
+total = 3000599  # only used in the progress bar
 pbar = tqdm(total = total)
 
 columns_raw = [
@@ -88,6 +88,7 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # Skip bad lines
             if len(line_raw) != len(columns_raw):
                 bad_lines += 1
+                logging.warning("Total bad lines skipped:\t" + str(bad_lines))
                 continue
 
             # Remove unused symbols
@@ -237,3 +238,5 @@ with zipfile.ZipFile(data_file, 'r') as z:
             # Print to csv file
             line_out = [line_raw[i].lower() for i in columns_keep_index]
             print(",".join(line_out))
+
+    pbar.clse()
