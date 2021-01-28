@@ -330,7 +330,8 @@ for file_no_i in range(n_files):
 
         XTX_tril = np.sum(XTX,axis=0)
         XTX_full = np.zeros((Xdim, Xdim))
-        XTX_full[np.tril_indices(XTX_full.shape[0], k = 0)] = XTX_tril
+        XTX_full[np.tril_indices(XTX_full.shape[0], k=0)] = XTX_tril
+        XTX_full = XTX_full + XTX_full.T - np.diag(np.diag(XTX_full))
         XTX_inv = np.linalg.inv(XTX_full)  ## p-by-p
 
         qr_comp_sum = np.sum(qr_comp, axis=0)
@@ -342,7 +343,9 @@ for file_no_i in range(n_files):
     ##----------------------------------------------------------------------------------------
     ## PRINT OUTPUT
     ##----------------------------------------------------------------------------------------
-    out = [Sig_inv_beta, out_dlsa, out_par, out_model_eval, out_time]
+    out = {'dqr_pilot_res': dqr_pilot_res,
+           'out_beta': out_beta
+           }
     pickle.dump(out, open(os.path.expanduser(model_saved_file_name), 'wb'))
 
     print("Model results are saved to:\t" + model_saved_file_name)
