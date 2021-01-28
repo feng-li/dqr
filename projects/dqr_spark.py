@@ -350,13 +350,11 @@ for file_no_i in range(n_files):
 
     print("Model results are saved to:\t" + model_saved_file_name)
 
-    # print(", ".join(format(x, "10.2f") for x in out_time))
     print("\nModel Summary:\n")
     print(out_time.to_string(index=False))
 
     print("\nModel Evaluation:")
     print("\tlog likelihood:\n")
-    print(out_model_eval.to_string(index=False))
 
     print("\nDQR Coefficients:\n")
     print(out_par.to_string())
