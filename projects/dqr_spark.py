@@ -284,11 +284,31 @@ for file_no_i in range(n_files):
             return XTX(X_sdf.drop('partition_id', axis=1))
 
         # partition the data and run the UDF
-        model_mapped_sdf_i = X_sdf.groupby("partition_id").apply(XTX_udf)
+        XTX_sdf = X_sdf.groupby("partition_id").apply(XTX_udf)
+
+        def qr_asymptotic_comp(pdf, pilot_estimator, quantile, bandwidth, Y_name):
+            """This function calculates the components in the one-step updating estimator
+            for quantile regression based on Koenker (2005), Wang et al. (2007), and
+            Chen et al. (2019),
+
+            pdf: Pandas DataFrame containing X and Y
+
+            """
+
+            Y = pdf[Y_name]
+            X = pdf.drop(Y_name)
+
+            Xbeta = X.dot(pilot_estimator)
+            error = Y - Xbeta  # n-by-1
+
+            I = (error < 0)
+            Z = quantile - I
+            comp1 = X.dot(Z)
+
+            K = 1 / 2 * pi * sqrt(pi) * exp(-(error / h) ^ 2)
 
 
-
-
+            return(out)
 
         # Union all sequential mapped results.
         if file_no_i == 0 and isub == 0:
