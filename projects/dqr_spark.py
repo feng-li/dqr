@@ -16,7 +16,7 @@ spark = pyspark.sql.SparkSession.builder.config(conf=conf).getOrCreate()
 spark.conf.set("spark.sql.execution.arrow.enabled", "true")
 spark.conf.set("spark.sql.execution.arrow.fallback.enabled", "true")
 
-spark.sparkContext.addPyFile("dqr.zip")
+# spark.sparkContext.addPyFile("dqr.zip")
 
 # System functions
 import os, sys, time
@@ -35,12 +35,12 @@ from pyspark.sql import functions as F
 from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id, log
 
 # dlsa functions
-from dlsa.dlsa import dlsa, dlsa_mapred  #, dlsa_r
-from dlsa.models import simulate_logistic, logistic_model
-from dlsa.model_eval import logistic_model_eval_sdf
-from dlsa.sdummies import get_sdummies
-from dlsa.utils import clean_airlinedata, insert_partition_id_pdf
-from dlsa.utils_spark import convert_schema
+# from dlsa.dlsa import dlsa, dlsa_mapred  #, dlsa_r
+# from dlsa.models import simulate_logistic, logistic_model
+# from dlsa.model_eval import logistic_model_eval_sdf
+# from dlsa.sdummies import get_sdummies
+# from dlsa.utils import clean_airlinedata, insert_partition_id_pdf
+# from dlsa.utils_spark import convert_schema
 
 
 # dqr
@@ -201,10 +201,6 @@ for file_no_i in range(n_files):
         "partition_id",
         monotonically_increasing_id() % partition_num_sub[file_no_i])
 
-    ## Create dummy variables We could do it either directly with
-    ## https://stackoverflow.com/questions/35879372/pyspark-matrix-with-dummy-variables
-    ## or we do it within grouped dlsa (default)
-
 ##----------------------------------------------------------------------------------------
 ## MODEL FITTING ON PARTITIONED DATA
 ##----------------------------------------------------------------------------------------
@@ -246,25 +242,53 @@ for file_no_i in range(n_files):
                                             "partition_id")
         time_repartition_sub.append(time.perf_counter() - tic_repartition)
 
+        X_sdf = data_sdf_i.select(['partition_id', 'mileage', 'year', 'price'])
+
+        import numpy as np
+        import pandas as pd
+        def XTX(pdf):
+            """This function calculates X'X where X is an n-by-p matrix for a given Pandas DataFrame.
+
+            This function employs the factorization that X'X = \sum_{i=1}^n x_i x'_i where
+            x is p-by-1 vector. It will firstly make a row-wise calculation and then sum
+            over all rows.
+
+            pdf: Pandas DataFrame
+
+            Return: 1-by-p(p+1)/2 row column Pandas DataFrame which is the lower
+            triangular part (including the diagonal elements) of the symmetric matrix X'X.
+
+            """
+            # pdf = data_pilot_pdf_i[ ['mileage', 'year', 'price'] ]
+
+            mat = pdf.to_numpy()
+            n, p = mat.shape
+            m = int(p*(p + 1)/2)
+            out_n_tril = np.zeros((n, m))
+            for i in range(n):
+                outer_i = np.outer(mat[i, :], mat[i, :])
+                out_n_tril[i, :] = outer_i[np.tril_indices(p)]
+
+            out_np = np.sum(out_n, axis=0)
+            out_pd = pd.DataFrame(out_np.reshape(1, m))
+            return(out_pd)
+
+
         ## Register a user defined function via the Pandas UDF
-        schema_beta = StructType([
-            StructField('par_id', IntegerType(), True),
-            StructField('coef', DoubleType(), True),
-            StructField('Sig_invMcoef', DoubleType(), True)
-        ] + convert_schema(usecols_x, dummy_info, fit_intercept, dummy_factors_baseline))
+        Xdim = len(X_sdf.columns) - 1 # with partition_id
+        XTX_tril_len = int(Xdim * (Xdim + 1) / 2)
+        schema_XTX = StructType([StructField(str(i), DoubleType(), True)
+                                 for i in range(XTX_tril_len)])
+        @pandas_udf(schema_XTX, PandasUDFType.GROUPED_MAP)
+        def XTX_udf(X_sdf):
+            return XTX(X_sdf.drop('partition_id', axis=1))
 
-        @pandas_udf(schema_beta, PandasUDFType.GROUPED_MAP)
-        def logistic_model_udf(sample_df):
-            return logistic_model(sample_df=sample_df,
-                                  Y_name=Y_name,
-                                  fit_intercept=fit_intercept,
-                                  dummy_info=dummy_info,
-                                  dummy_factors_baseline=dummy_factors_baseline,
-                                  data_info=data_info)
-
-        # pdb.set_trace()
         # partition the data and run the UDF
-        model_mapped_sdf_i = data_sdf_i.groupby("partition_id").apply(logistic_model_udf)
+        model_mapped_sdf_i = X_sdf.groupby("partition_id").apply(XTX_udf)
+
+
+
+
 
         # Union all sequential mapped results.
         if file_no_i == 0 and isub == 0:
