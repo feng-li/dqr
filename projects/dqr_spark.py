@@ -34,15 +34,6 @@ from pyspark.sql.types import *
 from pyspark.sql import functions as F
 from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id, log
 
-# dlsa functions
-# from dlsa.dlsa import dlsa, dlsa_mapred  #, dlsa_r
-# from dlsa.models import simulate_logistic, logistic_model
-# from dlsa.model_eval import logistic_model_eval_sdf
-# from dlsa.sdummies import get_sdummies
-# from dlsa.utils import clean_airlinedata, insert_partition_id_pdf
-# from dlsa.utils_spark import convert_schema
-
-
 # dqr
 from statsmodels.regression.quantile_regression import QuantReg
 
@@ -244,6 +235,7 @@ for file_no_i in range(n_files):
         time_repartition_sub.append(time.perf_counter() - tic_repartition)
 
         XY_sdf = data_sdf_i.select(['partition_id', 'mileage', 'year', 'price'])
+        sample_size = XY_sdf.count()
 
         import numpy as np
         import pandas as pd
@@ -270,7 +262,7 @@ for file_no_i in range(n_files):
                 outer_i = np.outer(mat[i, :], mat[i, :])
                 out_n_tril[i, :] = outer_i[np.tril_indices(p)]
 
-            out_np = np.sum(out_n, axis=0)
+            out_np = np.sum(out_n_tril, axis=0)
             out_pd = pd.DataFrame(out_np.reshape(1, m))
             return(out_pd)
 
@@ -318,7 +310,6 @@ for file_no_i in range(n_files):
 
 
         ## Register a user defined function via the Pandas UDF
-        Xdim = 2
         schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
                                      for i in range(Xdim + 1)])
         @pandas_udf(schema_qr_comp, PandasUDFType.GROUPED_MAP)
@@ -331,88 +322,29 @@ for file_no_i in range(n_files):
                 Y_name=Y_name)
 
         # partition the data and run the UDF
-        qr_comp = X_sdf.groupby("partition_id").apply(qr_asymptotic_comp_udf)
+        qr_comp_sdf = XY_sdf.groupby("partition_id").apply(qr_asymptotic_comp_udf)
 
         # Final update
+        qr_comp = qr_comp_sdf.toPandas().to_numpy()
+        XTX = XTX_sdf.toPandas().to_numpy()
 
-        qr_comp_pd = qr_comp.toPandas().to_numpy()
-        XTX
+        XTX_tril = np.sum(XTX,axis=0)
+        XTX_full = np.zeros((Xdim, Xdim))
+        XTX_full[np.tril_indices(XTX_full.shape[0], k = 0)] = XTX_tril
+        XTX_inv = np.linalg.inv(XTX_full)  ## p-by-p
+
+        qr_comp_sum = np.sum(qr_comp, axis=0)
+        f_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_sum[-1]
+
+        out_beta = dqr_pilot_res.params + f_hat_inv * XTX_inv.dot(qr_comp_sum[:-1])
 
 
-
-
-        # Union all sequential mapped results.
-        if file_no_i == 0 and isub == 0:
-            model_mapped_sdf = model_mapped_sdf_i
-            # memsize_sub = sys.getsizeof(data_pdf_i)
-        else:
-            model_mapped_sdf = model_mapped_sdf.unionAll(model_mapped_sdf_i)
-
-##----------------------------------------------------------------------------------------
-## AGGREGATING THE MODEL ESTIMATES
-##----------------------------------------------------------------------------------------
-if 'dqr' in fit_algorithms:
-    # sample_size=model_mapped_sdf.count()
-    sample_size = sum(sample_size_sub)
-
-    # Obtain Sig_inv and beta
-    tic_mapred = time.perf_counter()
-    Sig_inv_beta = dlsa_mapred(model_mapped_sdf)
-    time_mapred = time.perf_counter() - tic_mapred
-
-    tic_dlsa = time.perf_counter()
-    out_dlsa = dlsa(Sig_inv_=Sig_inv_beta.iloc[:, 2:],
-                    beta_=Sig_inv_beta["beta_byOLS"],
-                    sample_size=sample_size,
-                    fit_intercept=fit_intercept)
-
-    time_dlsa = time.perf_counter() - tic_dlsa
-    ##----------------------------------------------------------------------------------------
-    ## Model Evaluation
-    ##----------------------------------------------------------------------------------------
-    tic_model_eval = time.perf_counter()
-
-    out_par = out_dlsa
-    out_par["beta_byOLS"] = Sig_inv_beta["beta_byOLS"]
-    out_par["beta_byONESHOT"] = Sig_inv_beta["beta_byONESHOT"]
-
-    out_model_eval = logistic_model_eval_sdf(data_sdf=data_sdf_i,
-                                             par=out_par,
-                                             fit_intercept=fit_intercept,
-                                             Y_name=Y_name,
-                                             dummy_info=dummy_info,
-                                             dummy_factors_baseline=dummy_factors_baseline,
-                                             data_info=data_info)
-
-    time_model_eval = time.perf_counter() - tic_model_eval
     ##----------------------------------------------------------------------------------------
     ## PRINT OUTPUT
     ##----------------------------------------------------------------------------------------
-    memsize_total = sum(memsize_sub)
-    partition_num = sum(partition_num_sub)
-    time_repartition = sum(time_repartition_sub)
-    # time_2sdf = sum(time_2sdf_sub)
-    # sample_size_per_partition = sample_size / partition_num
-
-    out_time = pd.DataFrame(
-        {
-            "sample_size": sample_size,
-            "sample_size_per_partition": sample_size_per_partition,
-            "n_par": len(schema_beta) - 3,
-            "partition_num": partition_num,
-            "memsize_total": memsize_total,
-            # "time_2sdf": time_2sdf,
-            "time_repartition": time_repartition,
-            "time_mapred": time_mapred,
-            "time_dlsa": time_dlsa,
-            "time_model_eval": time_model_eval
-        },
-        index=[0])
-
-    # save the model to pickle, use pd.read_pickle("test.pkl") to load it.
-    # out_dlas.to_pickle("test.pkl")
     out = [Sig_inv_beta, out_dlsa, out_par, out_model_eval, out_time]
     pickle.dump(out, open(os.path.expanduser(model_saved_file_name), 'wb'))
+
     print("Model results are saved to:\t" + model_saved_file_name)
 
     # print(", ".join(format(x, "10.2f") for x in out_time))
@@ -423,14 +355,5 @@ if 'dqr' in fit_algorithms:
     print("\tlog likelihood:\n")
     print(out_model_eval.to_string(index=False))
 
-    print("\nDLSA Coefficients:\n")
+    print("\nDQR Coefficients:\n")
     print(out_par.to_string())
-
-    # Print results
-    print(lrModel.intercept)
-    print(lrModel.coefficients)
-    logLike.show()
-
-
-elif 'qr_spark' in fit_algorithms:
-    logging.warning("not implemented!")
