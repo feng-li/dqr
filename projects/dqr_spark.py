@@ -77,7 +77,7 @@ fit_algorithms = ['dqr']
 
 dqr_conf = {
     'pilot_sampler': 0.01,
-    'quantiles': [0.25, 0.5, 0.75]
+    'quantile': 0.25
 }
 # fit_algorithms = ['spark_logistic']
 
@@ -229,8 +229,9 @@ for file_no_i in range(n_files):
                                              fraction=dqr_conf['pilot_sampler'])
         data_pilot_pdf_i = data_pilot_sdf_i.toPandas()  # Send to master
 
-        dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name], exog=data_pilot_pdf_i['mileage'])
-        dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantiles'][0])
+        dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
+                             exog=data_pilot_pdf_i[['mileage', 'year']])
+        dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
             'bandwidth': dqr_pilot_res.bandwidth,
@@ -242,18 +243,18 @@ for file_no_i in range(n_files):
                                             "partition_id")
         time_repartition_sub.append(time.perf_counter() - tic_repartition)
 
-        X_sdf = data_sdf_i.select(['partition_id', 'mileage', 'year', 'price'])
+        XY_sdf = data_sdf_i.select(['partition_id', 'mileage', 'year', 'price'])
 
         import numpy as np
         import pandas as pd
-        def XTX(pdf):
+        def XTX(X):
             """This function calculates X'X where X is an n-by-p matrix for a given Pandas DataFrame.
 
             This function employs the factorization that X'X = \sum_{i=1}^n x_i x'_i where
             x is p-by-1 vector. It will firstly make a row-wise calculation and then sum
             over all rows.
 
-            pdf: Pandas DataFrame
+            X: Pandas DataFrame
 
             Return: 1-by-p(p+1)/2 row column Pandas DataFrame which is the lower
             triangular part (including the diagonal elements) of the symmetric matrix X'X.
@@ -261,7 +262,7 @@ for file_no_i in range(n_files):
             """
             # pdf = data_pilot_pdf_i[ ['mileage', 'year', 'price'] ]
 
-            mat = pdf.to_numpy()
+            mat = X.to_numpy()
             n, p = mat.shape
             m = int(p*(p + 1)/2)
             out_n_tril = np.zeros((n, m))
@@ -275,40 +276,70 @@ for file_no_i in range(n_files):
 
 
         ## Register a user defined function via the Pandas UDF
-        Xdim = len(X_sdf.columns) - 1 # with partition_id
+        Xdim = len(XY_sdf.columns) - 2 # with Y, partition_id
         XTX_tril_len = int(Xdim * (Xdim + 1) / 2)
         schema_XTX = StructType([StructField(str(i), DoubleType(), True)
                                  for i in range(XTX_tril_len)])
         @pandas_udf(schema_XTX, PandasUDFType.GROUPED_MAP)
-        def XTX_udf(X_sdf):
-            return XTX(X_sdf.drop('partition_id', axis=1))
+        def XTX_udf(pdf):
+            return XTX(X=pdf.drop(['partition_id', Y_name], axis=1))
 
         # partition the data and run the UDF
-        XTX_sdf = X_sdf.groupby("partition_id").apply(XTX_udf)
+        XTX_sdf = XY_sdf.groupby("partition_id").apply(XTX_udf)
 
-        def qr_asymptotic_comp(pdf, pilot_estimator, quantile, bandwidth, Y_name):
+        def qr_asymptotic_comp(pdf, beta0, quantile, bandwidth, Y_name):
             """This function calculates the components in the one-step updating estimator
             for quantile regression based on Koenker (2005), Wang et al. (2007), and
             Chen et al. (2019),
 
             pdf: Pandas DataFrame containing X and Y
 
+            Return: The last element is for the Gaussian kernel component
+
             """
 
-            Y = pdf[Y_name]
-            X = pdf.drop(Y_name)
+            Y = pdf[Y_name].to_numpy()
+            X = pdf.drop(Y_name, axis=1).to_numpy()
 
-            Xbeta = X.dot(pilot_estimator)
+            n, p = X.shape
+
+            Xbeta = X.dot(beta0)
             error = Y - Xbeta  # n-by-1
 
             I = (error < 0)
-            Z = quantile - I
-            comp1 = X.dot(Z)
+            Z = (quantile - I).reshape(n, 1)
+            XZ = np.sum(np.multiply(X, Z), axis=0)  # 1-by-p
 
-            K = 1 / 2 * pi * sqrt(pi) * exp(-(error / h) ^ 2)
-
+            # Gaussian Kernel
+            K = np.array(np.sum(1 / np.sqrt(2 * np.pi)  * np.exp(-(error / bandwidth) ** 2 / 2)))
+            out = pd.DataFrame(np.concatenate([XZ.reshape(1,p), K.reshape(1,1)],axis=1))
 
             return(out)
+
+
+        ## Register a user defined function via the Pandas UDF
+        Xdim = 2
+        schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
+                                     for i in range(Xdim + 1)])
+        @pandas_udf(schema_qr_comp, PandasUDFType.GROUPED_MAP)
+        def qr_asymptotic_comp_udf(X_sdf):
+            return qr_asymptotic_comp(
+                pdf=X_sdf.drop('partition_id', axis=1),
+                beta0=dqr_pilot_res.params,
+                quantile=dqr_conf['quantile'],
+                bandwidth=dqr_pilot_res.bandwidth,
+                Y_name=Y_name)
+
+        # partition the data and run the UDF
+        qr_comp = X_sdf.groupby("partition_id").apply(qr_asymptotic_comp_udf)
+
+        # Final update
+
+        qr_comp_pd = qr_comp.toPandas().to_numpy()
+        XTX
+
+
+
 
         # Union all sequential mapped results.
         if file_no_i == 0 and isub == 0:
