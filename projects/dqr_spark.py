@@ -143,8 +143,7 @@ if using_data in ["real_hdfs"]:
         dummy_info = pickle.load(
             open(os.path.expanduser(dummy_info_path["path"]), "rb"))
 
-
-    dummy_columns = ['exterior_color', 'has_accidents']
+    dummy_columns = ['exterior_color']
     # Dummy factors to drop as the baseline when fitting the intercept
     if fit_intercept:
         dummy_factors_baseline = ['Month_1', 'DayOfWeek_1', 'UniqueCarrier_000_OTHERS',
