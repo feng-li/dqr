@@ -244,4 +244,4 @@ with zipfile.ZipFile(data_file, 'r') as z:
             line_out = [line_raw[i].lower() for i in columns_keep_index]
             print(",".join(line_out))
 
-    pbar.clse()
+pbar.close()
