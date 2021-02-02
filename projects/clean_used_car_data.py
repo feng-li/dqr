@@ -128,7 +128,9 @@ with zipfile.ZipFile(data_file, 'r') as z:
                 line_raw[15] = line_raw[15].split()[0]
 
             # 16 exterior_color
-            line_raw[16] = re.split('[, ;]', line_raw[16])[0]
+            line16 = re.split('[, ;]', line_raw[16])[0]
+            line16 = line16.replace('"', '')
+            line_raw[16] = line16
 
             # 21 front_legroom
             if len(line_raw[21]) > 0:
@@ -159,7 +161,6 @@ with zipfile.ZipFile(data_file, 'r') as z:
 
             # 28 interior_color
             line28 = re.split('[, ;]', line_raw[28])[0]
-            # line28 = line_raw[28].split(" ")[0]
             line28 = line28.replace('"', '')
             line_raw[28] = line28
 
@@ -179,9 +180,10 @@ with zipfile.ZipFile(data_file, 'r') as z:
                 x = line_raw[36].split("-")[1]
                 line_raw[36] = x
 
-
             # 37 listing_color
-            line_raw[37] = line_raw[37].split(" ")[0]
+            line37 = re.split('[, ;]', line_raw[37])[0]
+            line37 = line37.replace('"', '')
+            line_raw[37] = line37
 
             # 41 major_options
             _major_options = re.compile('"\[\'.*\]"')
