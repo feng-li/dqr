@@ -67,6 +67,7 @@ fit_intercept = True
 fit_algorithms = ['dqr']
 
 dqr_conf = {
+    'fit_intercept': False,
     'pilot_sampler': 0.01,
     'quantile': 0.25
 }
@@ -78,7 +79,8 @@ if using_data in ["real_hdfs"]:
 #-----------------------------------------------------------------------------------------
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
-    usecols_x = [ 'mileage', 'year', 'exterior_color']
+    usecols_x = [ 'mileage', 'year', 'exterior_color', 'fuel_type']
+    dummy_columns = ['exterior_color', 'fuel_type']
     Y_name = "price"
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
@@ -138,12 +140,11 @@ if using_data in ["real_hdfs"]:
 
     if dummy_info_path["save"] is True:
         dummy_info = []
-        print("Create dummy and information and save it!")
+        print("Dummy and information will be created and saved to disk!")
     else:
         dummy_info = pickle.load(
             open(os.path.expanduser(dummy_info_path["path"]), "rb"))
 
-    dummy_columns = ['exterior_color']
     # Dummy factors to drop as the baseline when fitting the intercept
     if fit_intercept:
         dummy_factors_baseline = ['Month_1', 'DayOfWeek_1', 'UniqueCarrier_000_OTHERS',
@@ -151,7 +152,7 @@ if using_data in ["real_hdfs"]:
     else:
         dummy_factors_baseline = []
 
-    dummy_keep_top = [0.8, 0.8]
+    dummy_keep_top = [0.5, 0.9]
 
     n_files = len(file_path)
     partition_num_sub = []
@@ -209,6 +210,15 @@ for file_no_i in range(n_files):
         print("Descriptive statistics for data are loaded from file:\t" +
               data_info_path["path"])
 
+    # Obtain ONEHOT encoding
+    data_sdf_i, dummy_info = get_sdummies(sdf=data_sdf_i,
+                                          keep_top=dummy_keep_top,
+                                          replace_with="000_OTHERS",
+                                          dummy_columns=dummy_columns,
+                                          dummy_info=dummy_info,
+                                          dropLast=dqr_conf['fit_intercept'])
+
+
     # Independent fit chunked data with UDF.
     if 'dqr' in fit_algorithms:
 
@@ -219,8 +229,12 @@ for file_no_i in range(n_files):
                                              fraction=dqr_conf['pilot_sampler'])
         data_pilot_pdf_i = data_pilot_sdf_i.toPandas()  # Send to master
 
+        # Convert ONEHOT encoded Pandas to a full dense pandas.
+
+
+
         dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
-                             exog=data_pilot_pdf_i[['mileage', 'year']])
+                             exog=data_pilot_pdf_i[['mileage', 'year', 'exterior_color']])
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
