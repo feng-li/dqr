@@ -230,11 +230,32 @@ for file_no_i in range(n_files):
         data_pilot_pdf_i = data_pilot_sdf_i.toPandas()  # Send to master
 
         # Convert ONEHOT encoded Pandas to a full dense pandas.
+        def spark_onehot_to_pd_dense(pdf, onehot_column, onehot_column_name=[]):
+            """Convert Pandas DataFrame containing Spark SparseVector encoded column into pandas dense vector
 
+            """
+            # pdf = data_pilot_pdf_i
+            # column = 'features_ONEHOT'
+            features_ONEHOT = pdf[onehot_column].apply(lambda x: x.toArray())
+            features_DENSE = features_ONEHOT.explode().values.reshape(
+                features_ONEHOT.shape[0], len(features_ONEHOT[0]))
+            features_pd = pd.DataFrame(features_DENSE)
 
+            if len(onehot_column_name) != 0:
+                features_pd.column = onehot_column_name
+
+            pdf_dense = pd.concat([pdf.drop(onehot_column,axis=1), features_pd],axis=1)
+            return(pdf_dense)
+
+        # Run a pilot model with sampled data from Spark. Note: statsmodels does not support sparse matrix, TERRIBLE!
+        onehot_column_name = [key + "_" +values_i for key in dummy_info['factor_selected'].keys()
+                              for values_i in dummy_info['factor_selected'][key]]
+        data_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=data_pilot_pdf_i,
+                                                    onehot_column='features_ONEHOT',
+                                                    onehot_column_name=[])
 
         dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
-                             exog=data_pilot_pdf_i[['mileage', 'year', 'exterior_color']])
+                             exog=data_pilot_pdf_i[['mileage', 'year']])
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
