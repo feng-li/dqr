@@ -242,7 +242,7 @@ for file_no_i in range(n_files):
             features_pd = pd.DataFrame(features_DENSE)
 
             if len(onehot_column_name) != 0:
-                features_pd.column = onehot_column_name
+                features_pd.columns = onehot_column_name
 
             pdf_dense = pd.concat([pdf.drop(onehot_column,axis=1), features_pd],axis=1)
             return(pdf_dense)
@@ -253,10 +253,11 @@ for file_no_i in range(n_files):
                               for values_i in dummy_info['factor_selected_names'][key]]
         data_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=data_pilot_pdf_i,
                                                     onehot_column='features_ONEHOT',
-                                                    onehot_column_name=[])
+                                                    onehot_column_name=onehot_column_name)
 
+        data_qr_name = list(set(usecols_x) - set(dummy_columns)) + onehot_column_name
         dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
-                             exog=data_pilot_pdf_i[['mileage', 'year']])
+                             exog=data_pilot_pdf_i[data_qr_name[:21]].astype(float))
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
