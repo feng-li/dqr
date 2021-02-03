@@ -248,8 +248,9 @@ for file_no_i in range(n_files):
             return(pdf_dense)
 
         # Run a pilot model with sampled data from Spark. Note: statsmodels does not support sparse matrix, TERRIBLE!
-        onehot_column_name = [key + "_" +values_i for key in dummy_info['factor_selected'].keys()
-                              for values_i in dummy_info['factor_selected'][key]]
+        onehot_column_name = ['_'.join([key, values_i])
+                              for key in dummy_info['factor_selected_names'].keys()
+                              for values_i in dummy_info['factor_selected_names'][key]]
         data_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=data_pilot_pdf_i,
                                                     onehot_column='features_ONEHOT',
                                                     onehot_column_name=[])
