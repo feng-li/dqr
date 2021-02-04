@@ -2,9 +2,9 @@
 
 import findspark
 findspark.init("/usr/lib/spark-current")
-if __package__ is None  or name__ == '__main__':
-    from os import sys, path
-    sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+# if __package__ is None  or name__ == '__main__':
+#     from os import sys, path
+#     sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 
 import pyspark
 # PyArrow compatibility https://spark.apache.org/docs/latest/sql-pyspark-pandas-with-arrow.html#compatibility-setting-for-pyarrow--0150-and-spark-23x-24x
