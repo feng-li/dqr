@@ -255,9 +255,9 @@ for file_no_i in range(n_files):
                                                     onehot_column='features_ONEHOT',
                                                     onehot_column_names=onehot_column_names)
 
-        data_qr_name = list(set(usecols_x) - set(dummy_columns)) + onehot_column_names
+        data_qr_name = (list(set(usecols_x) - set(dummy_columns)) + onehot_column_names)[:21]
         dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
-                             exog=data_pilot_pdf_i[data_qr_name[:21]].astype(float))
+                             exog=data_pilot_pdf_i[data_qr_name].astype(float))
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
@@ -270,13 +270,13 @@ for file_no_i in range(n_files):
                                             "partition_id")
         time_repartition_sub.append(time.perf_counter() - tic_repartition)
 
-        XY_sdf = data_sdf_i.select(['partition_id', 'mileage', 'year', 'price'])
+        XY_sdf = data_sdf_i # .select(['partition_id', 'mileage', 'year', 'price'])
         sample_size = XY_sdf.count()
 
         import numpy as np
         import pandas as pd
         def XTX(X):
-            """This function calculates X'X where X is an n-by-p matrix for a given Pandas DataFrame.
+            """This function calculates X'X where X is an n-by-p  Pandas DataFrame.
 
             This function employs the factorization that X'X = \sum_{i=1}^n x_i x'_i where
             x is p-by-1 vector. It will firstly make a row-wise calculation and then sum
@@ -289,6 +289,7 @@ for file_no_i in range(n_files):
 
             """
             # pdf = data_pilot_pdf_i[ ['mileage', 'year', 'price'] ]
+            # if len(onehot_column) != 0:
 
             mat = X.to_numpy()
             n, p = mat.shape
@@ -304,13 +305,18 @@ for file_no_i in range(n_files):
 
 
         ## Register a user defined function via the Pandas UDF
-        Xdim = len(XY_sdf.columns) - 2 # with Y, partition_id
+        Xdim = len(data_qr_name) #  - 2 # with Y, partition_id
         XTX_tril_len = int(Xdim * (Xdim + 1) / 2)
-        schema_XTX = StructType([StructField(str(i), DoubleType(), True)
-                                 for i in range(XTX_tril_len)])
+        schema_XTX = StructType([StructField(i, DoubleType(), True)
+                                 for i in range(data_qr_name)])
         @pandas_udf(schema_XTX, PandasUDFType.GROUPED_MAP)
         def XTX_udf(pdf):
-            return XTX(X=pdf.drop(['partition_id', Y_name], axis=1))
+            # Convert Spark ONEHOT encoded column into Pandas dense DataFrame
+            pdf_dense = spark_onehot_to_pd_dense(
+                pdf=pdf,
+                onehot_column='features_ONEHOT',
+                onehot_column_names=onehot_column_names)
+            return XTX(X=pdf_dense[data_qr_name])
 
         # partition the data and run the UDF
         XTX_sdf = XY_sdf.groupby("partition_id").apply(XTX_udf)
@@ -346,12 +352,17 @@ for file_no_i in range(n_files):
 
 
         ## Register a user defined function via the Pandas UDF
-        schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
-                                     for i in range(Xdim + 1)])
+        schema_qr_comp = StructType([StructField(i, DoubleType(), True)
+                                     for i in [Y_name] + data_qr_name])
         @pandas_udf(schema_qr_comp, PandasUDFType.GROUPED_MAP)
-        def qr_asymptotic_comp_udf(X_sdf):
+        def qr_asymptotic_comp_udf(pdf):
+            pdf_dense = spark_onehot_to_pd_dense(
+                pdf=pdf,
+                onehot_column='features_ONEHOT',
+                onehot_column_names=onehot_column_names)
             return qr_asymptotic_comp(
-                pdf=X_sdf.drop('partition_id', axis=1),
+                pdf=pdf_dense[data_qr_name + [Y_name]],
+                # pdf=X_sdf.drop('partition_id', axis=1),
                 beta0=dqr_pilot_res.params,
                 quantile=dqr_conf['quantile'],
                 bandwidth=dqr_pilot_res.bandwidth,
