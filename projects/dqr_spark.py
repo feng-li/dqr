@@ -16,7 +16,8 @@ spark = pyspark.sql.SparkSession.builder.config(conf=conf).getOrCreate()
 spark.conf.set("spark.sql.execution.arrow.enabled", "true")
 spark.conf.set("spark.sql.execution.arrow.fallback.enabled", "true")
 
-# spark.sparkContext.addPyFile("dqr.zip")
+spark.sparkContext.addPyFile("dqr.zip")
+from dqr.sdummies import get_sdummies
 
 # System functions
 import os, sys, time
@@ -62,8 +63,6 @@ data_info_path = {
 
 # Model settings
 #-----------------------------------------------------------------------------------------
-fit_intercept = True
-# fit_algorithms = ['dlsa_logistic', 'spark_logistic']
 fit_algorithms = ['dqr']
 
 dqr_conf = {
@@ -71,7 +70,6 @@ dqr_conf = {
     'pilot_sampler': 0.01,
     'quantile': 0.25
 }
-# fit_algorithms = ['spark_logistic']
 
 #  Settings for using real data
 #-----------------------------------------------------------------------------------------
@@ -79,9 +77,10 @@ if using_data in ["real_hdfs"]:
 #-----------------------------------------------------------------------------------------
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
-    usecols_x = [ 'mileage', 'year', 'exterior_color', 'fuel_type']
+    usecols_x = [ 'mileage', 'year']#, 'exterior_color', 'fuel_type']
     Y_name = "price"
-    dummy_columns = ['exterior_color', 'fuel_type']
+    dummy_columns = []
+    # dummy_columns = ['exterior_color', 'fuel_type']
     dummy_keep_top = [0.5, 0.9]
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
@@ -147,7 +146,7 @@ if using_data in ["real_hdfs"]:
             open(os.path.expanduser(dummy_info_path["path"]), "rb"))
 
     # Dummy factors to drop as the baseline when fitting the intercept
-    if fit_intercept:
+    if dqr_conf['fit_intercept']:
         dummy_factors_baseline = ['Month_1', 'DayOfWeek_1', 'UniqueCarrier_000_OTHERS',
                                   'Origin_000_OTHERS', 'Dest_000_OTHERS']
     else:
@@ -210,13 +209,13 @@ for file_no_i in range(n_files):
               data_info_path["path"])
 
     # Obtain ONEHOT encoding
-    data_sdf_i, dummy_info = get_sdummies(sdf=data_sdf_i,
-                                          keep_top=dummy_keep_top,
-                                          replace_with="000_OTHERS",
-                                          dummy_columns=dummy_columns,
-                                          dummy_info=dummy_info,
-                                          dropLast=dqr_conf['fit_intercept'])
-
+    if len(dummy_columns) > 0:
+        data_sdf_i, dummy_info = get_sdummies(sdf=data_sdf_i,
+                                              keep_top=dummy_keep_top,
+                                              replace_with="000_OTHERS",
+                                              dummy_columns=dummy_columns,
+                                              dummy_info=dummy_info,
+                                              dropLast=dqr_conf['fit_intercept'])
 
     # Independent fit chunked data with UDF.
     if 'dqr' in fit_algorithms:
@@ -247,14 +246,18 @@ for file_no_i in range(n_files):
             return(pdf_dense)
 
         # Run a pilot model with sampled data from Spark. Note: statsmodels does not support sparse matrix, TERRIBLE!
-        onehot_column_names = ['_'.join([key, values_i])
-                              for key in dummy_info['factor_selected_names'].keys()
-                              for values_i in dummy_info['factor_selected_names'][key]]
-        data_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=data_pilot_pdf_i,
-                                                    onehot_column='features_ONEHOT',
-                                                    onehot_column_names=onehot_column_names)
+        if len(dummy_columns) > 0:
+            onehot_column_names = ['_'.join([key, values_i])
+                                  for key in dummy_info['factor_selected_names'].keys()
+                                  for values_i in dummy_info['factor_selected_names'][key]]
+            data_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=data_pilot_pdf_i,
+                                                        onehot_column='features_ONEHOT',
+                                                        onehot_column_names=onehot_column_names)
+        else:
+            onehot_column_names = []
 
         data_column_x_names = (list(set(usecols_x) - set(dummy_columns)) + onehot_column_names)[:21]
+
         dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
                              exog=data_pilot_pdf_i[data_column_x_names].astype(float))
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
@@ -306,15 +309,17 @@ for file_no_i in range(n_files):
         ## Register a user defined function via the Pandas UDF
         Xdim = len(data_column_x_names) #  - 2 # with Y, partition_id
         XTX_tril_len = int(Xdim * (Xdim + 1) / 2)
-        schema_XTX = StructType([StructField(i, DoubleType(), True)
-                                 for i in range(data_column_x_names)])
+        schema_XTX = StructType([StructField(str(i), DoubleType(), True)
+                                 for i in range(XTX_tril_len)])
         @pandas_udf(schema_XTX, PandasUDFType.GROUPED_MAP)
         def XTX_udf(pdf):
             # Convert Spark ONEHOT encoded column into Pandas dense DataFrame
-            pdf_dense = spark_onehot_to_pd_dense(
-                pdf=pdf,
-                onehot_column='features_ONEHOT',
-                onehot_column_names=onehot_column_names)
+            # pdf_dense = spark_onehot_to_pd_dense(
+            #     pdf=pdf,
+            #     onehot_column='features_ONEHOT',
+            #     onehot_column_names=onehot_column_names)
+            # return XTX(X=pdf_dense[data_column_x_names])
+            pdf_dense = pdf
             return XTX(X=pdf_dense[data_column_x_names])
 
         # partition the data and run the UDF
@@ -351,14 +356,17 @@ for file_no_i in range(n_files):
 
 
         ## Register a user defined function via the Pandas UDF
-        schema_qr_comp = StructType([StructField(i, DoubleType(), True)
-                                     for i in [Y_name] + data_column_x_names])
+        schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
+                                     for i in range(Xdim + 1)])
         @pandas_udf(schema_qr_comp, PandasUDFType.GROUPED_MAP)
         def qr_asymptotic_comp_udf(pdf):
-            pdf_dense = spark_onehot_to_pd_dense(
-                pdf=pdf,
-                onehot_column='features_ONEHOT',
-                onehot_column_names=onehot_column_names)
+            if len(dummy_columns) > 0:
+                pdf_dense = spark_onehot_to_pd_dense(
+                    pdf=pdf,
+                    onehot_column='features_ONEHOT',
+                    onehot_column_names=onehot_column_names)
+            else:
+                pdf_dense = pdf
             return qr_asymptotic_comp(
                 pdf=pdf_dense[data_column_x_names + [Y_name]],
                 # pdf=X_sdf.drop('partition_id', axis=1),
