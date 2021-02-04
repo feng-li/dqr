@@ -77,11 +77,11 @@ if using_data in ["real_hdfs"]:
 #-----------------------------------------------------------------------------------------
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
-    usecols_x = [ 'mileage', 'year']#, 'exterior_color', 'fuel_type']
+    usecols_x = [ 'mileage', 'year', 'exterior_color']#, 'fuel_type']
     Y_name = "price"
-    dummy_columns = []
-    # dummy_columns = ['exterior_color', 'fuel_type']
-    dummy_keep_top = [0.5, 0.9]
+    # dummy_columns = []
+    dummy_columns = ['exterior_color']#, 'fuel_type']
+    dummy_keep_top = [0.5]#, 0.9]
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
                               StructField('back_legroom', DoubleType(), True),
@@ -228,15 +228,22 @@ for file_no_i in range(n_files):
         data_pilot_pdf_i = data_pilot_sdf_i.toPandas()  # Send to master
 
         # Convert ONEHOT encoded Pandas to a full dense pandas.
-        def spark_onehot_to_pd_dense(pdf, onehot_column, onehot_column_names=[]):
+        def spark_onehot_to_pd_dense(pdf, onehot_column, onehot_column_names=[],
+                                     onehot_column_is_sparse=True):
             """Convert Pandas DataFrame containing Spark SparseVector encoded column into pandas dense vector
 
             """
             # pdf = data_pilot_pdf_i
             # column = 'features_ONEHOT'
-            features_ONEHOT = pdf[onehot_column].apply(lambda x: x.toArray())
+            if onehot_column_is_sparse:
+                features_ONEHOT = pdf[onehot_column].apply(lambda x: x.toArray())
+            else:
+                features_ONEHOT = pdf[onehot_column]
+
+            # one dense list
             features_DENSE = features_ONEHOT.explode().values.reshape(
                 features_ONEHOT.shape[0], len(features_ONEHOT[0]))
+
             features_pd = pd.DataFrame(features_DENSE)
 
             if len(onehot_column_names) != 0:
@@ -252,14 +259,15 @@ for file_no_i in range(n_files):
                                   for values_i in dummy_info['factor_selected_names'][key]]
             data_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=data_pilot_pdf_i,
                                                         onehot_column='features_ONEHOT',
-                                                        onehot_column_names=onehot_column_names)
+                                                        onehot_column_names=onehot_column_names,
+                                                        onehot_column_is_sparse=False)
         else:
             onehot_column_names = []
 
         data_column_x_names = (list(set(usecols_x) - set(dummy_columns)) + onehot_column_names)[:21]
 
         dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
-                             exog=data_pilot_pdf_i[data_column_x_names].astype(float))
+                             exog=(data_pilot_pdf_i[data_column_x_names]).astype(float))
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
@@ -314,12 +322,14 @@ for file_no_i in range(n_files):
         @pandas_udf(schema_XTX, PandasUDFType.GROUPED_MAP)
         def XTX_udf(pdf):
             # Convert Spark ONEHOT encoded column into Pandas dense DataFrame
-            # pdf_dense = spark_onehot_to_pd_dense(
-            #     pdf=pdf,
-            #     onehot_column='features_ONEHOT',
-            #     onehot_column_names=onehot_column_names)
-            # return XTX(X=pdf_dense[data_column_x_names])
-            pdf_dense = pdf
+            if len(dummy_columns) > 0:
+                pdf_dense = spark_onehot_to_pd_dense(
+                    pdf=pdf,
+                    onehot_column='features_ONEHOT',
+                    onehot_column_names=onehot_column_names,
+                    onehot_column_is_sparse=False)
+            else:
+                pdf_dense = pdf
             return XTX(X=pdf_dense[data_column_x_names])
 
         # partition the data and run the UDF
@@ -349,7 +359,9 @@ for file_no_i in range(n_files):
             XZ = np.sum(np.multiply(X, Z), axis=0)  # 1-by-p
 
             # Gaussian Kernel
-            K = np.array(np.sum(1 / np.sqrt(2 * np.pi)  * np.exp(-(error / bandwidth) ** 2 / 2)))
+            K = np.array(np.sum(1 / np.sqrt(2 * np.pi) *
+                                np.exp(-(error.astype(float) /
+                                         bandwidth.astype(float) ) ** 2 / 2)))
             out = pd.DataFrame(np.concatenate([XZ.reshape(1,p), K.reshape(1,1)],axis=1))
 
             return(out)
@@ -364,7 +376,8 @@ for file_no_i in range(n_files):
                 pdf_dense = spark_onehot_to_pd_dense(
                     pdf=pdf,
                     onehot_column='features_ONEHOT',
-                    onehot_column_names=onehot_column_names)
+                    onehot_column_names=onehot_column_names,
+                    onehot_column_is_sparse=False)
             else:
                 pdf_dense = pdf
             return qr_asymptotic_comp(
@@ -403,10 +416,10 @@ for file_no_i in range(n_files):
     print("Model results are saved to:\t" + model_saved_file_name)
 
     print("\nModel Summary:\n")
-    print(out_time.to_string(index=False))
+    # print(out_time.to_string(index=False))
 
     print("\nModel Evaluation:")
     print("\tlog likelihood:\n")
 
     print("\nDQR Coefficients:\n")
-    print(out_par.to_string())
+    # print(out_par.to_string())
