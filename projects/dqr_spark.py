@@ -69,7 +69,7 @@ data_info_path = {
 fit_algorithms = ['dqr']
 
 dqr_conf = {
-    'fit_intercept': False,
+    'fit_intercept': True,
     'pilot_sampler': 0.01,
     'quantile': 0.25
 }
@@ -149,11 +149,11 @@ if using_data in ["real_hdfs"]:
             open(os.path.expanduser(dummy_info_path["path"]), "rb"))
 
     # Dummy factors to drop as the baseline when fitting the intercept
-    if dqr_conf['fit_intercept']:
-        dummy_factors_baseline = ['Month_1', 'DayOfWeek_1', 'UniqueCarrier_000_OTHERS',
-                                  'Origin_000_OTHERS', 'Dest_000_OTHERS']
-    else:
-        dummy_factors_baseline = []
+    # if dqr_conf['fit_intercept']:
+    #     dummy_factors_baseline = ['Month_1', 'DayOfWeek_1', 'UniqueCarrier_000_OTHERS',
+    #                               'Origin_000_OTHERS', 'Dest_000_OTHERS']
+    # else:
+    #     dummy_factors_baseline = []
 
     n_files = len(file_path)
     partition_num_sub = []
@@ -224,6 +224,14 @@ for file_no_i in range(n_files):
     if 'dqr' in fit_algorithms:
 
         # Step 0: Data transformation
+
+        # Add intercept column
+        if dqr_conf['fit_intercept']:
+            usecols_x.insert(0, 'Intercept')
+            data_sdf_i = data_sdf_i.withColumn('Intercept', F.lit(1))
+
+
+
 
         # Step 1: Pilot Sampler
         data_pilot_sdf_i = data_sdf_i.sample(withReplacement=False,
@@ -325,7 +333,7 @@ for file_no_i in range(n_files):
     ##----------------------------------------------------------------------------------------
     out = {'dqr_pilot_res': dqr_pilot_res,
            'out_beta': out_beta
-           }
+    }
     pickle.dump(out, open(os.path.expanduser(model_saved_file_name), 'wb'))
 
     print("Model results are saved to:\t" + model_saved_file_name)
