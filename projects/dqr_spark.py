@@ -18,6 +18,9 @@ spark.conf.set("spark.sql.execution.arrow.fallback.enabled", "true")
 
 spark.sparkContext.addPyFile("dqr.zip")
 from dqr.sdummies import get_sdummies
+from dqr.math import XTX
+from dqr.utils_spark import spark_onehot_to_pd_dense
+from dqr.models import qr_asymptotic_comp
 
 # System functions
 import os, sys, time
@@ -227,31 +230,6 @@ for file_no_i in range(n_files):
                                              fraction=dqr_conf['pilot_sampler'])
         data_pilot_pdf_i = data_pilot_sdf_i.toPandas()  # Send to master
 
-        # Convert ONEHOT encoded Pandas to a full dense pandas.
-        def spark_onehot_to_pd_dense(pdf, onehot_column, onehot_column_names=[],
-                                     onehot_column_is_sparse=True):
-            """Convert Pandas DataFrame containing Spark SparseVector encoded column into pandas dense vector
-
-            """
-            # pdf = data_pilot_pdf_i
-            # column = 'features_ONEHOT'
-            if onehot_column_is_sparse:
-                features_ONEHOT = pdf[onehot_column].apply(lambda x: x.toArray())
-            else:
-                features_ONEHOT = pdf[onehot_column]
-
-            # one dense list
-            features_DENSE = features_ONEHOT.explode().values.reshape(
-                features_ONEHOT.shape[0], len(features_ONEHOT[0]))
-
-            features_pd = pd.DataFrame(features_DENSE)
-
-            if len(onehot_column_names) != 0:
-                features_pd.columns = onehot_column_names
-
-            pdf_dense = pd.concat([pdf.drop(onehot_column,axis=1), features_pd],axis=1)
-            return(pdf_dense)
-
         # Run a pilot model with sampled data from Spark. Note: statsmodels does not support sparse matrix, TERRIBLE!
         if len(dummy_columns) > 0:
             onehot_column_names = ['_'.join([key, values_i])
@@ -283,37 +261,6 @@ for file_no_i in range(n_files):
         XY_sdf = data_sdf_i # .select(['partition_id', 'mileage', 'year', 'price'])
         sample_size = XY_sdf.count()
 
-        import numpy as np
-        import pandas as pd
-        def XTX(X):
-            """This function calculates X'X where X is an n-by-p  Pandas DataFrame.
-
-            This function employs the factorization that X'X = \sum_{i=1}^n x_i x'_i where
-            x is p-by-1 vector. It will firstly make a row-wise calculation and then sum
-            over all rows.
-
-            X: Pandas DataFrame
-
-            Return: 1-by-p(p+1)/2 row column Pandas DataFrame which is the lower
-            triangular part (including the diagonal elements) of the symmetric matrix X'X.
-
-            """
-            # pdf = data_pilot_pdf_i[ ['mileage', 'year', 'price'] ]
-            # if len(onehot_column) != 0:
-
-            mat = X.to_numpy()
-            n, p = mat.shape
-            m = int(p*(p + 1)/2)
-            out_n_tril = np.zeros((n, m))
-            for i in range(n):
-                outer_i = np.outer(mat[i, :], mat[i, :])
-                out_n_tril[i, :] = outer_i[np.tril_indices(p)]
-
-            out_np = np.sum(out_n_tril, axis=0)
-            out_pd = pd.DataFrame(out_np.reshape(1, m))
-            return(out_pd)
-
-
         ## Register a user defined function via the Pandas UDF
         Xdim = len(data_column_x_names) #  - 2 # with Y, partition_id
         XTX_tril_len = int(Xdim * (Xdim + 1) / 2)
@@ -334,38 +281,6 @@ for file_no_i in range(n_files):
 
         # partition the data and run the UDF
         XTX_sdf = XY_sdf.groupby("partition_id").apply(XTX_udf)
-
-        def qr_asymptotic_comp(pdf, beta0, quantile, bandwidth, Y_name):
-            """This function calculates the components in the one-step updating estimator
-            for quantile regression based on Koenker (2005), Wang et al. (2007), and
-            Chen et al. (2019),
-
-            pdf: Pandas DataFrame containing X and Y
-
-            Return: The last element is for the Gaussian kernel component
-
-            """
-
-            Y = pdf[Y_name].to_numpy()
-            X = pdf.drop(Y_name, axis=1).to_numpy()
-
-            n, p = X.shape
-
-            Xbeta = X.dot(beta0)
-            error = Y - Xbeta  # n-by-1
-
-            I = (error < 0)
-            Z = (quantile - I).reshape(n, 1)
-            XZ = np.sum(np.multiply(X, Z), axis=0)  # 1-by-p
-
-            # Gaussian Kernel
-            K = np.array(np.sum(1 / np.sqrt(2 * np.pi) *
-                                np.exp(-(error.astype(float) /
-                                         bandwidth.astype(float) ) ** 2 / 2)))
-            out = pd.DataFrame(np.concatenate([XZ.reshape(1,p), K.reshape(1,1)],axis=1))
-
-            return(out)
-
 
         ## Register a user defined function via the Pandas UDF
         schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
