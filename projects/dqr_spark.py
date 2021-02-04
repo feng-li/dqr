@@ -80,8 +80,9 @@ if using_data in ["real_hdfs"]:
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
     usecols_x = [ 'mileage', 'year', 'exterior_color', 'fuel_type']
-    dummy_columns = ['exterior_color', 'fuel_type']
     Y_name = "price"
+    dummy_columns = ['exterior_color', 'fuel_type']
+    dummy_keep_top = [0.5, 0.9]
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
                               StructField('back_legroom', DoubleType(), True),
@@ -151,8 +152,6 @@ if using_data in ["real_hdfs"]:
                                   'Origin_000_OTHERS', 'Dest_000_OTHERS']
     else:
         dummy_factors_baseline = []
-
-    dummy_keep_top = [0.5, 0.9]
 
     n_files = len(file_path)
     partition_num_sub = []
@@ -255,9 +254,9 @@ for file_no_i in range(n_files):
                                                     onehot_column='features_ONEHOT',
                                                     onehot_column_names=onehot_column_names)
 
-        data_qr_name = (list(set(usecols_x) - set(dummy_columns)) + onehot_column_names)[:21]
+        data_column_x_names = (list(set(usecols_x) - set(dummy_columns)) + onehot_column_names)[:21]
         dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
-                             exog=data_pilot_pdf_i[data_qr_name].astype(float))
+                             exog=data_pilot_pdf_i[data_column_x_names].astype(float))
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
@@ -305,10 +304,10 @@ for file_no_i in range(n_files):
 
 
         ## Register a user defined function via the Pandas UDF
-        Xdim = len(data_qr_name) #  - 2 # with Y, partition_id
+        Xdim = len(data_column_x_names) #  - 2 # with Y, partition_id
         XTX_tril_len = int(Xdim * (Xdim + 1) / 2)
         schema_XTX = StructType([StructField(i, DoubleType(), True)
-                                 for i in range(data_qr_name)])
+                                 for i in range(data_column_x_names)])
         @pandas_udf(schema_XTX, PandasUDFType.GROUPED_MAP)
         def XTX_udf(pdf):
             # Convert Spark ONEHOT encoded column into Pandas dense DataFrame
@@ -316,7 +315,7 @@ for file_no_i in range(n_files):
                 pdf=pdf,
                 onehot_column='features_ONEHOT',
                 onehot_column_names=onehot_column_names)
-            return XTX(X=pdf_dense[data_qr_name])
+            return XTX(X=pdf_dense[data_column_x_names])
 
         # partition the data and run the UDF
         XTX_sdf = XY_sdf.groupby("partition_id").apply(XTX_udf)
@@ -353,7 +352,7 @@ for file_no_i in range(n_files):
 
         ## Register a user defined function via the Pandas UDF
         schema_qr_comp = StructType([StructField(i, DoubleType(), True)
-                                     for i in [Y_name] + data_qr_name])
+                                     for i in [Y_name] + data_column_x_names])
         @pandas_udf(schema_qr_comp, PandasUDFType.GROUPED_MAP)
         def qr_asymptotic_comp_udf(pdf):
             pdf_dense = spark_onehot_to_pd_dense(
@@ -361,7 +360,7 @@ for file_no_i in range(n_files):
                 onehot_column='features_ONEHOT',
                 onehot_column_names=onehot_column_names)
             return qr_asymptotic_comp(
-                pdf=pdf_dense[data_qr_name + [Y_name]],
+                pdf=pdf_dense[data_column_x_names + [Y_name]],
                 # pdf=X_sdf.drop('partition_id', axis=1),
                 beta0=dqr_pilot_res.params,
                 quantile=dqr_conf['quantile'],
@@ -383,9 +382,7 @@ for file_no_i in range(n_files):
 
         qr_comp_sum = np.sum(qr_comp, axis=0)
         f_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_sum[-1]
-
         out_beta = dqr_pilot_res.params + f_hat_inv * XTX_inv.dot(qr_comp_sum[:-1])
-
 
     ##----------------------------------------------------------------------------------------
     ## PRINT OUTPUT
