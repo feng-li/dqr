@@ -13,8 +13,20 @@
 
 ## Run the code on a Spark platform
 
-    make all
-    PYSPARK_PYTHON=/usr/local/bin/python3.7 spark-submit projects/dqr_spark.py
+- Zip the code as a standard Python module ('placed in `dist/`')
+
+``` python
+python3.7 setup.py sdist
+```
+
+- Run the project on a Spark platform
+
+``` bash
+PYSPARK_PYTHON=/usr/local/bin/python3.7 \
+        spark-submit --py-files dist/dqr-0.1.dev53+g1a4b3cb.d20210205.zip \
+        projects/dqr_spark.py
+```
+
 
 # Conceptual demo in R
 

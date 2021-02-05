@@ -23,7 +23,7 @@ from pyspark.sql import functions as F
 from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id
 
 # dqr
-spark.sparkContext.addPyFile("dqr.zip")
+spark.sparkContext.addPyFile('/home/lifeng/code/dqr/dist/dqr-0.1.dev52+g52482a3.d20210205.tar.gz') #("dqr.zip")
 from dqr.sdummies import get_sdummies
 from dqr.math import XTX
 from dqr.utils_spark import spark_onehot_to_pd_dense
