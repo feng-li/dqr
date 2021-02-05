@@ -1,10 +1,12 @@
 #! /usr/bin/env python3.7
 
-import findspark
-findspark.init("/usr/lib/spark-current")
-# if __package__ is None  or __name__ == '__main__':
-#     from os import sys, path
-#     sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+# Only use for interactive mode
+import sys, pathlib
+if hasattr(sys, 'ps1'):
+    import os, findspark
+    findspark.init("/usr/lib/spark-current")
+    libdir = pathlib.Path(os.getcwd()).parent
+    sys.path.append(libdir)
 
 import pyspark
 # PyArrow compatibility https://spark.apache.org/docs/latest/sql-pyspark-pandas-with-arrow.html#compatibility-setting-for-pyarrow--0150-and-spark-23x-24x
@@ -23,15 +25,19 @@ from pyspark.sql import functions as F
 from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id
 
 # dqr
-spark.sparkContext.addPyFile('/home/lifeng/code/dqr/dist/dqr-0.1.dev52+g52482a3.d20210205.tar.gz') #("dqr.zip")
-from dqr.sdummies import get_sdummies
+# Or use `spark-submit --py-files dqr-xx.yy.zip dqr_spark.py`
+import os, glob, pathlib
+# spark.sparkContext.addPyFile('dqr.zip')
+spark.sparkContext.addPyFile(max(glob.iglob('../dist/dqr*.zip'), key=os.path.getctime))
+
+from dqr.dqr.sdummies import get_sdummies
 from dqr.math import XTX
 from dqr.utils_spark import spark_onehot_to_pd_dense
 from dqr.models import qr_asymptotic_comp
 from statsmodels.regression.quantile_regression import QuantReg
 
 # System functions
-import os, sys, time
+import sys, time
 from math import ceil
 import pickle
 import numpy as np
