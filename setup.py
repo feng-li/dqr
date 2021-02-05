@@ -19,7 +19,6 @@ setup(name='dqr',
       packages=['dqr'],
       install_requires=[
           'pyspark >= 2.3.1',
-          'sklearn >= 0.21.2',
           'statsmodels >= 0.12.0',
           'numpy   >= 1.16.3',
           'pandas  >= 0.23.4',
