@@ -27,8 +27,8 @@ from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_
 # dqr
 # Or use `spark-submit --py-files dqr-xx.yy.zip dqr_spark.py`
 import os, glob, pathlib
-# spark.sparkContext.addPyFile('dqr.zip')
-spark.sparkContext.addPyFile(max(glob.iglob('../dist/dqr*.zip'), key=os.path.getctime))
+spark.sparkContext.addPyFile('dqr.zip')
+# spark.sparkContext.addPyFile(max(glob.iglob('../dist/dqr*.zip'), key=os.path.getctime))
 
 from dqr.dqr.sdummies import get_sdummies
 from dqr.math import XTX

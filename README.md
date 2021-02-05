@@ -13,20 +13,28 @@
 
 ## Run the code on a Spark platform
 
-- Zip the code as a standard Python module ('placed in `dist/`')
+- Zip the code into a portable package (a zipped file `dqr.zip` will be placed into
+  `projects` folder)
 
-``` python
-python3.7 setup.py sdist
+``` bash
+make zip
 ```
 
 - Run the project on a Spark platform
 
 ``` bash
 PYSPARK_PYTHON=/usr/local/bin/python3.7 \
-        spark-submit --py-files dist/dqr-0.1.dev53+g1a4b3cb.d20210205.zip \
+        spark-submit --py-files projects/dqr.zip \
         projects/dqr_spark.py
 ```
 
+## Build a Python module
+
+You could also build the code into standard Python module and deploy to Spark clusters.
+
+``` python
+python setup.py bdist
+```
 
 # Conceptual demo in R
 
