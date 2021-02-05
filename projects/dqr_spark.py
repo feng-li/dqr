@@ -2,7 +2,7 @@
 
 import findspark
 findspark.init("/usr/lib/spark-current")
-# if __package__ is None  or name__ == '__main__':
+# if __package__ is None  or __name__ == '__main__':
 #     from os import sys, path
 #     sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 
@@ -11,6 +11,7 @@ import pyspark
 conf = pyspark.SparkConf().setAppName("Spark DQR App").setExecutorEnv(
     'ARROW_PRE_0_15_IPC_FORMAT', '1')
 spark = pyspark.sql.SparkSession.builder.config(conf=conf).getOrCreate()
+spark.sparkContext.setLogLevel("WARN") # "DEBUG", "ERROR"
 
 # Enable Arrow-based columnar data transfers
 spark.conf.set("spark.sql.execution.arrow.enabled", "true")
@@ -36,7 +37,7 @@ from math import ceil
 # Spark functions
 from pyspark.sql.types import *
 from pyspark.sql import functions as F
-from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id, log
+from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id
 
 # dqr
 from statsmodels.regression.quantile_regression import QuantReg
@@ -80,10 +81,10 @@ if using_data in ["real_hdfs"]:
 #-----------------------------------------------------------------------------------------
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
-    usecols_x = [ 'mileage', 'year', 'exterior_color']#, 'fuel_type']
+    col_names_x = [ 'mileage', 'year']
     Y_name = "price"
-    # dummy_columns = []
-    dummy_columns = ['exterior_color']#, 'fuel_type']
+    # col_names_dummy = []
+    col_names_dummy = ['exterior_color']#, 'fuel_type']
     dummy_keep_top = [0.5]#, 0.9]
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
@@ -141,13 +142,6 @@ if using_data in ["real_hdfs"]:
         'path': "~/running/data/used_cars_data/dummy_info.pkl"
     }
 
-    if dummy_info_path["save"] is True:
-        dummy_info = []
-        print("Dummy and information will be created and saved to disk!")
-    else:
-        dummy_info = pickle.load(
-            open(os.path.expanduser(dummy_info_path["path"]), "rb"))
-
     # Dummy factors to drop as the baseline when fitting the intercept
     # if dqr_conf['fit_intercept']:
     #     dummy_factors_baseline = ['Month_1', 'DayOfWeek_1', 'UniqueCarrier_000_OTHERS',
@@ -155,41 +149,36 @@ if using_data in ["real_hdfs"]:
     # else:
     #     dummy_factors_baseline = []
 
-    n_files = len(file_path)
-    partition_num_sub = []
     sample_size_per_partition = 100000
 
-    sample_size_sub = []
-    memsize_sub = []
 
 # Read or load data chunks into pandas
 #-----------------------------------------------------------------------------------------
+n_files = len(file_path)
+partition_num_sub = []
+sample_size_sub = []
+memsize_sub = []
 time_2sdf_sub = []
 time_repartition_sub = []
 
-loop_counter = 0
-
-file_no_i = 0
 for file_no_i in range(n_files):
     tic_2sdf = time.perf_counter()
 
     ## Using HDFS data
-    ## ------------------------------
-    isub = 0  # fixed, never changed
 
     # Read HDFS to Spark DataFrame and clean NAs
     data_sdf_i = spark.read.csv(file_path[file_no_i],
                                 header=True,
                                 schema=schema_sdf)
-    data_sdf_i = data_sdf_i.select(usecols_x + [Y_name])
-    data_sdf_i = data_sdf_i.dropna()
+    XY_sdf_i = data_sdf_i.select(col_names_x + [Y_name] + col_names_dummy)
+    XY_sdf_i = XY_sdf_i.dropna()
 
-    sample_size_sub.append(data_sdf_i.count())
+    sample_size_sub.append(XY_sdf_i.count())
     partition_num_sub.append(
         ceil(sample_size_sub[file_no_i] / sample_size_per_partition))
 
     ## Add partition ID
-    data_sdf_i = data_sdf_i.withColumn(
+    XY_sdf_i = XY_sdf_i.withColumn(
         "partition_id",
         monotonically_increasing_id() % partition_num_sub[file_no_i])
 
@@ -200,7 +189,7 @@ for file_no_i in range(n_files):
     # Load or Create descriptive statistics used for standardizing data.
     if data_info_path["save"] is True:
         # descriptive statistics
-        data_info = data_sdf_i.describe().toPandas()
+        data_info = XY_sdf_i.describe().toPandas()
         data_info.to_csv(os.path.expanduser(data_info_path["path"]),
                          index=False)
         print("Descriptive statistics for data are saved to:\t" +
@@ -212,11 +201,19 @@ for file_no_i in range(n_files):
               data_info_path["path"])
 
     # Obtain ONEHOT encoding
-    if len(dummy_columns) > 0:
-        data_sdf_i, dummy_info = get_sdummies(sdf=data_sdf_i,
+    if len(col_names_dummy) > 0:
+        # Retrieve dummy information
+        if dummy_info_path["save"] is True:
+            dummy_info = []
+            print("Dummy and information will be created and saved to disk!")
+        else:
+            dummy_info = pickle.load(
+                open(os.path.expanduser(dummy_info_path["path"]), "rb"))
+
+        XY_sdf_i, dummy_info = get_sdummies(sdf=XY_sdf_i,
                                               keep_top=dummy_keep_top,
                                               replace_with="000_OTHERS",
-                                              dummy_columns=dummy_columns,
+                                              dummy_columns=col_names_dummy,
                                               dummy_info=dummy_info,
                                               dropLast=dqr_conf['fit_intercept'])
 
@@ -225,35 +222,37 @@ for file_no_i in range(n_files):
 
         # Step 0: Data transformation
 
-        # Add intercept column
+        # Standardize non-categorical columns
+        sample_size = int(data_info.iloc[0,1])
+        for non_dummy_col in col_names_x:
+            XY_sdf_i.withColumn(non_dummy_col,(F.col(non_dummy_col)-data_info[non_dummy_col][1])/data_info[non_dummy_col][2])
+
+        # Add the intercept column
         if dqr_conf['fit_intercept']:
-            usecols_x.insert(0, 'Intercept')
-            data_sdf_i = data_sdf_i.withColumn('Intercept', F.lit(1))
-
-
-
+            col_names_x.insert(0, 'Intercept')
+            XY_sdf_i = XY_sdf_i.withColumn('Intercept', F.lit(1))
 
         # Step 1: Pilot Sampler
-        data_pilot_sdf_i = data_sdf_i.sample(withReplacement=False,
+        XY_pilot_sdf_i = XY_sdf_i.sample(withReplacement=False,
                                              fraction=dqr_conf['pilot_sampler'])
-        data_pilot_pdf_i = data_pilot_sdf_i.toPandas()  # Send to master
+
+        XY_pilot_pdf_i = XY_pilot_sdf_i.toPandas()  # Send to master
 
         # Run a pilot model with sampled data from Spark. Note: statsmodels does not support sparse matrix, TERRIBLE!
-        if len(dummy_columns) > 0:
+        if len(col_names_dummy) > 0:
             onehot_column_names = ['_'.join([key, values_i])
                                   for key in dummy_info['factor_selected_names'].keys()
                                   for values_i in dummy_info['factor_selected_names'][key]]
-            data_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=data_pilot_pdf_i,
+            XY_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=XY_pilot_pdf_i,
                                                         onehot_column='features_ONEHOT',
                                                         onehot_column_names=onehot_column_names,
                                                         onehot_column_is_sparse=False)
         else:
             onehot_column_names = []
 
-        data_column_x_names = (list(set(usecols_x) - set(dummy_columns)) + onehot_column_names)[:21]
-
-        dqr_pilot = QuantReg(endog=data_pilot_pdf_i[Y_name],
-                             exog=(data_pilot_pdf_i[data_column_x_names]).astype(float))
+        column_names_x_full = col_names_x + onehot_column_names
+        dqr_pilot = QuantReg(endog=XY_pilot_pdf_i[Y_name],
+                             exog=(XY_pilot_pdf_i[column_names_x_full]).astype(float))
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
@@ -261,23 +260,21 @@ for file_no_i in range(n_files):
             'params': dqr_pilot_res.params
         }
 
+        # Step 2: Updating QR components
         tic_repartition = time.perf_counter()
-        data_sdf_i = data_sdf_i.repartition(partition_num_sub[file_no_i],
+        XY_sdf_i = XY_sdf_i.repartition(partition_num_sub[file_no_i],
                                             "partition_id")
         time_repartition_sub.append(time.perf_counter() - tic_repartition)
 
-        XY_sdf = data_sdf_i # .select(['partition_id', 'mileage', 'year', 'price'])
-        sample_size = XY_sdf.count()
-
         ## Register a user defined function via the Pandas UDF
-        Xdim = len(data_column_x_names) #  - 2 # with Y, partition_id
+        Xdim = len(column_names_x_full) #  - 2 # with Y, partition_id
         XTX_tril_len = int(Xdim * (Xdim + 1) / 2)
         schema_XTX = StructType([StructField(str(i), DoubleType(), True)
                                  for i in range(XTX_tril_len)])
         @pandas_udf(schema_XTX, PandasUDFType.GROUPED_MAP)
         def XTX_udf(pdf):
             # Convert Spark ONEHOT encoded column into Pandas dense DataFrame
-            if len(dummy_columns) > 0:
+            if len(col_names_dummy) > 0:
                 pdf_dense = spark_onehot_to_pd_dense(
                     pdf=pdf,
                     onehot_column='features_ONEHOT',
@@ -285,17 +282,17 @@ for file_no_i in range(n_files):
                     onehot_column_is_sparse=False)
             else:
                 pdf_dense = pdf
-            return XTX(X=pdf_dense[data_column_x_names])
+            return XTX(X=pdf_dense[column_names_x_full])
 
         # partition the data and run the UDF
-        XTX_sdf = XY_sdf.groupby("partition_id").apply(XTX_udf)
+        XTX_sdf = XY_sdf_i.groupby("partition_id").apply(XTX_udf)
 
         ## Register a user defined function via the Pandas UDF
         schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
                                      for i in range(Xdim + 1)])
         @pandas_udf(schema_qr_comp, PandasUDFType.GROUPED_MAP)
         def qr_asymptotic_comp_udf(pdf):
-            if len(dummy_columns) > 0:
+            if len(col_names_dummy) > 0:
                 pdf_dense = spark_onehot_to_pd_dense(
                     pdf=pdf,
                     onehot_column='features_ONEHOT',
@@ -304,7 +301,7 @@ for file_no_i in range(n_files):
             else:
                 pdf_dense = pdf
             return qr_asymptotic_comp(
-                pdf=pdf_dense[data_column_x_names + [Y_name]],
+                pdf=pdf_dense[column_names_x_full + [Y_name]],
                 # pdf=X_sdf.drop('partition_id', axis=1),
                 beta0=dqr_pilot_res.params,
                 quantile=dqr_conf['quantile'],
@@ -312,9 +309,9 @@ for file_no_i in range(n_files):
                 Y_name=Y_name)
 
         # partition the data and run the UDF
-        qr_comp_sdf = XY_sdf.groupby("partition_id").apply(qr_asymptotic_comp_udf)
+        qr_comp_sdf = XY_sdf_i.groupby("partition_id").apply(qr_asymptotic_comp_udf)
 
-        # Final update
+        # Step 3: Merge and combine
         qr_comp = qr_comp_sdf.toPandas().to_numpy()
         XTX = XTX_sdf.toPandas().to_numpy()
 
@@ -324,6 +321,7 @@ for file_no_i in range(n_files):
         XTX_full = XTX_full + XTX_full.T - np.diag(np.diag(XTX_full))
         XTX_inv = np.linalg.inv(XTX_full)  ## p-by-p
 
+        # Step 4: One-step updating coefficients
         qr_comp_sum = np.sum(qr_comp, axis=0)
         f_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_sum[-1]
         out_beta = dqr_pilot_res.params + f_hat_inv * XTX_inv.dot(qr_comp_sum[:-1])
