@@ -5,9 +5,16 @@ def read(file):
     return open(os.path.join(os.path.dirname(__file__), file)).read()
 
 setup(name='dqr',
-      use_scm_version=True,
-      setup_requires=['setuptools_scm'],
-      version='0.1.1',
+      setup_requires=['setuptools-git-versioning'],
+      version_config={
+          "template": "{tag}",
+          "dev_template": "{tag}.dev{ccount}+git.{sha}",
+          "dirty_template": "{tag}.dev{ccount}+git.{sha}.dirty",
+          "starting_version": "0.1.1",
+          "version_callback": None,
+          "version_file": None,
+          "count_commits_from_version_file": False
+      },
       description='Distributed Quantile Regression',
       keywords='spark, spark-ml, pyspark, mapreduce',
       long_description=read('README.md'),
