@@ -17,30 +17,25 @@ spark.sparkContext.setLogLevel("WARN") # "DEBUG", "ERROR"
 spark.conf.set("spark.sql.execution.arrow.enabled", "true")
 spark.conf.set("spark.sql.execution.arrow.fallback.enabled", "true")
 
-spark.sparkContext.addPyFile("dqr.zip")
-from dqr.sdummies import get_sdummies
-from dqr.math import XTX
-from dqr.utils_spark import spark_onehot_to_pd_dense
-from dqr.models import qr_asymptotic_comp
-
-# System functions
-import os, sys, time
-from datetime import timedelta
-
-from math import ceil
-import pickle
-import numpy as np
-import pandas as pd
-import string
-from math import ceil
-
 # Spark functions
 from pyspark.sql.types import *
 from pyspark.sql import functions as F
 from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id
 
 # dqr
+spark.sparkContext.addPyFile("dqr.zip")
+from dqr.sdummies import get_sdummies
+from dqr.math import XTX
+from dqr.utils_spark import spark_onehot_to_pd_dense
+from dqr.models import qr_asymptotic_comp
 from statsmodels.regression.quantile_regression import QuantReg
+
+# System functions
+import os, sys, time
+from math import ceil
+import pickle
+import numpy as np
+import pandas as pd
 
 # https://docs.azuredatabricks.net/spark/latest/spark-sql/udf-python-pandas.html#setting-arrow-batch-size
 # spark.conf.set("spark.sql.execution.arrow.maxRecordsPerBatch", 10000) # default
@@ -330,14 +325,19 @@ for file_no_i in range(n_files):
     ## PRINT OUTPUT
     ##----------------------------------------------------------------------------------------
     out = {'dqr_pilot_res': dqr_pilot_res,
-           'out_beta': out_beta
+           'data_info': data_info,
+           'dummy_info': dummy_info,
+           'out_beta': out_beta,
+           'col_names_dummy': col_names_dummy,
+           'col_names_x': col_names_x,
+           'col_names_x_full': column_names_x_full,
     }
     pickle.dump(out, open(os.path.expanduser(model_saved_file_name), 'wb'))
 
     print("Model results are saved to:\t" + model_saved_file_name)
 
     print("\nModel Summary:\n")
-    # print(out_time.to_string(index=False))
+    print(out)
 
     print("\nModel Evaluation:")
     print("\tlog likelihood:\n")
