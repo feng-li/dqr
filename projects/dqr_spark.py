@@ -22,7 +22,7 @@ spark.conf.set("spark.sql.execution.arrow.fallback.enabled", "true")
 # Spark functions
 from pyspark.sql.types import *
 from pyspark.sql import functions as F
-from pyspark.sql.functions import udf, pandas_udf, PandasUDFType, monotonically_increasing_id
+from pyspark.sql.functions import udf, pandas_udf
 
 # dqr
 # Or use `spark-submit --py-files dqr-xx.yy.zip dqr_spark.py`
@@ -30,7 +30,7 @@ import os, glob, pathlib
 spark.sparkContext.addPyFile('dqr.zip')
 # spark.sparkContext.addPyFile(max(glob.iglob('../dist/dqr*.zip'), key=os.path.getctime))
 
-from dqr.dqr.sdummies import get_sdummies
+from dqr.sdummies import get_sdummies
 from dqr.math import XTX
 from dqr.utils_spark import spark_onehot_to_pd_dense
 from dqr.models import qr_asymptotic_comp
@@ -171,6 +171,7 @@ for file_no_i in range(n_files):
     data_sdf_i = spark.read.csv(file_path[file_no_i],
                                 header=True,
                                 schema=schema_sdf)
+
     XY_sdf_i = data_sdf_i.select(col_names_x + [Y_name] + col_names_dummy)
     XY_sdf_i = XY_sdf_i.dropna()
 
@@ -181,7 +182,7 @@ for file_no_i in range(n_files):
     ## Add partition ID
     XY_sdf_i = XY_sdf_i.withColumn(
         "partition_id",
-        monotonically_increasing_id() % partition_num_sub[file_no_i])
+        F.monotonically_increasing_id() % partition_num_sub[file_no_i])
 
 ##----------------------------------------------------------------------------------------
 ## MODEL FITTING ON PARTITIONED DATA
@@ -267,12 +268,12 @@ for file_no_i in range(n_files):
                                             "partition_id")
         time_repartition_sub.append(time.perf_counter() - tic_repartition)
 
-        ## Register a user defined function via the Pandas UDF
+        # Register a user defined function via the Pandas UDF
         Xdim = len(column_names_x_full) #  - 2 # with Y, partition_id
         XTX_tril_len = int(Xdim * (Xdim + 1) / 2)
         schema_XTX = StructType([StructField(str(i), DoubleType(), True)
                                  for i in range(XTX_tril_len)])
-        @pandas_udf(schema_XTX, PandasUDFType.GROUPED_MAP)
+        @pandas_udf(schema_XTX, F.PandasUDFType.GROUPED_MAP)
         def XTX_udf(pdf):
             # Convert Spark ONEHOT encoded column into Pandas dense DataFrame
             if len(col_names_dummy) > 0:
@@ -291,7 +292,7 @@ for file_no_i in range(n_files):
         ## Register a user defined function via the Pandas UDF
         schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
                                      for i in range(Xdim + 1)])
-        @pandas_udf(schema_qr_comp, PandasUDFType.GROUPED_MAP)
+        @pandas_udf(schema_qr_comp, F.PandasUDFType.GROUPED_MAP)
         def qr_asymptotic_comp_udf(pdf):
             if len(col_names_dummy) > 0:
                 pdf_dense = spark_onehot_to_pd_dense(
