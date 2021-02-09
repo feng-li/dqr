@@ -23,7 +23,7 @@ OUTPATH=~/running/
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # Zip dlsa for uploading
-cd $DIR/../../
+cd $DIR/../
 make zip
 cd -;
 
@@ -41,8 +41,8 @@ do
                   --driver-memory 50g    \
                   --executor-cores ${EC}    \
                   --conf spark.rpc.message.maxSize=2000 \
-                  $DIR/../${MODEL_FILE}.py  \
-                  > ${OUTPATH}${MODEL_DESCRIPTION}_${MODEL_FILE}.NE${executors}.EC${EC}_${tic0}.out 2> ${OUTPATH}${MODEL_DESCRIPTION}_${MODEL_FILE}.NE${executors}.EC${EC}_${tic0}.log
+                  $DIR/${MODEL_FILE}.py
+#                  > ${OUTPATH}${MODEL_DESCRIPTION}_${MODEL_FILE}.NE${executors}.EC${EC}_${tic0}.out 2> ${OUTPATH}${MODEL_DESCRIPTION}_${MODEL_FILE}.NE${executors}.EC${EC}_${tic0}.log
     toc=`date +%s`
     runtime=$((toc-tic))
     echo ${MODEL_FILE}.NE${executors}.EC${EC} finished, "Time used (s):" $runtime
