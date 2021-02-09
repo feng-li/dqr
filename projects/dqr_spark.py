@@ -59,7 +59,7 @@ import pandas as pd
 using_data = "real_hdfs"  # ["simulated_pdf", "real_pdf", "real_hdfs"
 partition_method = "systematic"
 model_saved_file_name = '~/running/dqr_model_' + time.strftime(
-    "%Y-%m-%d-%H.%M.%S", time.localtime())
+    "%Y%m%d-%H.%M.%S", time.localtime())
 
 # If save data descriptive statistics
 data_info_path = {
