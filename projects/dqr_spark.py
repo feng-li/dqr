@@ -176,7 +176,6 @@ for file_no_i in range(n_files):
     out_commcost = commcost_estimate(sdf=data_sdf_i,
                                      fractions=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5])
 
-
     XY_sdf_i = data_sdf_i.select(col_names_x + [Y_name] + col_names_dummy)
     XY_sdf_i = XY_sdf_i.dropna()
 
