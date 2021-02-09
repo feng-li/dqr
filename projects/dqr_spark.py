@@ -34,12 +34,13 @@ from dqr.sdummies import get_sdummies
 from dqr.math import XTX
 from dqr.utils_spark import spark_onehot_to_pd_dense
 from dqr.models import qr_asymptotic_comp
+from dqr.memory import commcost_estimate
 from statsmodels.regression.quantile_regression import QuantReg
 
 # System functions
 import sys, time
 from math import ceil
-import pickle
+import pickle, json, pprint
 import numpy as np
 import pandas as pd
 
@@ -49,16 +50,16 @@ import pandas as pd
 # spark.conf.set("spark.sql.shuffle.partitions", 10)
 # print(spark.conf.get("spark.sql.shuffle.partitions"))
 
-##----------------------------------------------------------------------------------------
-## SETTINGS
-##----------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------
+# SETTINGS
+# ---------------------------------------------------------------------------------------
 
 # General  settings
-#-----------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------
 using_data = "real_hdfs"  # ["simulated_pdf", "real_pdf", "real_hdfs"
 partition_method = "systematic"
 model_saved_file_name = '~/running/dqr_model_' + time.strftime(
-    "%Y-%m-%d-%H.%M.%S", time.localtime()) + '.pkl'
+    "%Y-%m-%d-%H.%M.%S", time.localtime())
 
 # If save data descriptive statistics
 data_info_path = {
@@ -67,7 +68,7 @@ data_info_path = {
 }
 
 # Model settings
-#-----------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------
 fit_algorithms = ['dqr']
 
 dqr_conf = {
@@ -77,9 +78,9 @@ dqr_conf = {
 }
 
 #  Settings for using real data
-#-----------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------
 if using_data in ["real_hdfs"]:
-#-----------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
     col_names_x = [ 'mileage', 'year']
@@ -154,7 +155,7 @@ if using_data in ["real_hdfs"]:
 
 
 # Read or load data chunks into pandas
-#-----------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------
 n_files = len(file_path)
 partition_num_sub = []
 sample_size_sub = []
@@ -165,12 +166,16 @@ time_repartition_sub = []
 for file_no_i in range(n_files):
     tic_2sdf = time.perf_counter()
 
-    ## Using HDFS data
+    # Using HDFS data
 
     # Read HDFS to Spark DataFrame and clean NAs
     data_sdf_i = spark.read.csv(file_path[file_no_i],
                                 header=True,
                                 schema=schema_sdf)
+
+    out_commcost = commcost_estimate(sdf=data_sdf_i,
+                                     fractions=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5])
+
 
     XY_sdf_i = data_sdf_i.select(col_names_x + [Y_name] + col_names_dummy)
     XY_sdf_i = XY_sdf_i.dropna()
@@ -179,14 +184,14 @@ for file_no_i in range(n_files):
     partition_num_sub.append(
         ceil(sample_size_sub[file_no_i] / sample_size_per_partition))
 
-    ## Add partition ID
+    # Add partition ID
     XY_sdf_i = XY_sdf_i.withColumn(
         "partition_id",
         F.monotonically_increasing_id() % partition_num_sub[file_no_i])
 
-##----------------------------------------------------------------------------------------
-## MODEL FITTING ON PARTITIONED DATA
-##----------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------
+# MODEL FITTING ON PARTITIONED DATA
+# ----------------------------------------------------------------------------------------
 # Split the process into small subs if reading a real big DataFrame which my cause
     # Load or Create descriptive statistics used for standardizing data.
     if data_info_path["save"] is True:
@@ -236,7 +241,7 @@ for file_no_i in range(n_files):
 
         # Step 1: Pilot Sampler
         XY_pilot_sdf_i = XY_sdf_i.sample(withReplacement=False,
-                                             fraction=dqr_conf['pilot_sampler'])
+                                         fraction=dqr_conf['pilot_sampler'])
 
         XY_pilot_pdf_i = XY_pilot_sdf_i.toPandas()  # Send to master
 
@@ -289,7 +294,7 @@ for file_no_i in range(n_files):
         # partition the data and run the UDF
         XTX_sdf = XY_sdf_i.groupby("partition_id").apply(XTX_udf)
 
-        ## Register a user defined function via the Pandas UDF
+        # Register a user defined function via the Pandas UDF
         schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
                                      for i in range(Xdim + 1)])
         @pandas_udf(schema_qr_comp, F.PandasUDFType.GROUPED_MAP)
@@ -321,30 +326,32 @@ for file_no_i in range(n_files):
         XTX_full = np.zeros((Xdim, Xdim))
         XTX_full[np.tril_indices(XTX_full.shape[0], k=0)] = XTX_tril
         XTX_full = XTX_full + XTX_full.T - np.diag(np.diag(XTX_full))
-        XTX_inv = np.linalg.inv(XTX_full)  ## p-by-p
+        XTX_inv = np.linalg.inv(XTX_full)  # p-by-p
 
         # Step 4: One-step updating coefficients
         qr_comp_sum = np.sum(qr_comp, axis=0)
         f_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_sum[-1]
         out_beta = dqr_pilot_res.params + f_hat_inv * XTX_inv.dot(qr_comp_sum[:-1])
 
-    ##----------------------------------------------------------------------------------------
-    ## PRINT OUTPUT
-    ##----------------------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------------------
+    # PRINT OUTPUT
+    # ---------------------------------------------------------------------------------------
     out = {'dqr_pilot_res': dqr_pilot_res,
            'data_info': data_info,
-           'dummy_info': dummy_info,
+           # 'dummy_info': dummy_info,
            'out_beta': out_beta,
            'col_names_dummy': col_names_dummy,
            'col_names_x': col_names_x,
            'col_names_x_full': column_names_x_full,
+           'commcost': out_commcost
     }
-    pickle.dump(out, open(os.path.expanduser(model_saved_file_name), 'wb'))
+    pickle.dump(out, open(os.path.expanduser(model_saved_file_name + '.pkl'), 'wb'))
+    json.dump(out, open(os.path.expanduser(model_saved_file_name + '.json'), 'w'))
 
     print("Model results are saved to:\t" + model_saved_file_name)
 
     print("\nModel Summary:\n")
-    print(out)
+    pprint.pprint(out)
 
     print("\nModel Evaluation:")
     print("\tlog likelihood:\n")
