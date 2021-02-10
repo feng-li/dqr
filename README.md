@@ -1,4 +1,5 @@
-# `dqr`: Distributed Quantile Regression by Pilot Sampling and One-Step Updating
+# `dqr`: Distributed Quantile Regression
+_by Pilot Sampling and One-Step Updating_
 
 # Spark implementation
 
@@ -13,7 +14,7 @@
 
 ## Run the code on a Spark platform
 
-- Zip the code into a portable package (a zipped file `dqr.zip` will be placed into
+- Zip the code into a portable package (a zipped file `dqr.zip` will be placed into the
   `projects` folder)
 
 ``` bash
