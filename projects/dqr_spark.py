@@ -83,11 +83,19 @@ if using_data in ["real_hdfs"]:
 # ----------------------------------------------------------------------------------------
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
-    col_names_x = [ 'mileage', 'year']
     Y_name = "price"
-    # col_names_dummy = []
-    col_names_dummy = ['exterior_color']#, 'fuel_type']
-    dummy_keep_top = [0.5]#, 0.9]
+    col_names_x = [ 'back_legroom', 'city_fuel_economy', 'daysonmarket',
+                    'engine_cylinders', 'engine_displacement', 'front_legroom',
+                    'fuel_tank_volume', 'height', 'highway_fuel_economy', 'horsepower',
+                    'length',  'major_options', 'make_name', 'mileage',
+                    'price', 'seller_rating', 'wheelbase', 'width', 'year' ]
+
+    col_names_dummy = ['body_type', 'engine_type', 'exterior_color', 'franchise_dealer',
+                       'fuel_type', 'has_accidents', 'interior_color', 'isCab',
+                       'listing_color', 'make_name', 'maximum_seating', 'owner_count',
+                       'transmission', 'transmission_display', 'wheel_system', ]
+
+    dummy_keep_top = [0.5] * len(col_names_dummy) #, 0.9]
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
                               StructField('back_legroom', DoubleType(), True),
@@ -174,7 +182,7 @@ for file_no_i in range(n_files):
                                 schema=schema_sdf)
 
     out_commcost = commcost_estimate(sdf=data_sdf_i,
-                                     fractions=[0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5])
+                                     fractions=[x/10 for x in range(10)][1:])
 
     XY_sdf_i = data_sdf_i.select(col_names_x + [Y_name] + col_names_dummy)
     XY_sdf_i = XY_sdf_i.dropna()
@@ -344,13 +352,14 @@ for file_no_i in range(n_files):
            'col_names_x_full': column_names_x_full,
            'commcost': out_commcost
     }
+    print("\nModel Summary:\n")
+    pprint.pprint(out)
+
     pickle.dump(out, open(os.path.expanduser(model_saved_file_name + '.pkl'), 'wb'))
-    json.dump(out, open(os.path.expanduser(model_saved_file_name + '.json'), 'w'))
+    # json.dump(out, open(os.path.expanduser(model_saved_file_name + '.json'), 'w'))
 
     print("Model results are saved to:\t" + model_saved_file_name)
 
-    print("\nModel Summary:\n")
-    pprint.pprint(out)
 
     print("\nModel Evaluation:")
     print("\tlog likelihood:\n")
