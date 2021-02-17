@@ -85,15 +85,15 @@ if using_data in ["real_hdfs"]:
 
     Y_name = "price"
     col_names_x = [ 'back_legroom', 'city_fuel_economy', 'daysonmarket',
-                    'engine_cylinders', 'engine_displacement', 'front_legroom',
-                    'fuel_tank_volume', 'height', 'highway_fuel_economy', 'horsepower',
-                    'length', 'major_options', 'mileage', 'seller_rating', 'wheelbase',
-                    'width', 'year' ]
+                    'engine_displacement', 'front_legroom', 'fuel_tank_volume', 'height',
+                    'highway_fuel_economy', 'horsepower', 'length', 'mileage',
+                    'seller_rating', 'wheelbase', 'width', 'year' ]
 
-    col_names_dummy = ['body_type', 'engine_type', 'exterior_color', 'franchise_dealer',
-                       'fuel_type', 'has_accidents', 'interior_color', 'isCab',
-                       'listing_color', 'make_name', 'maximum_seating', 'owner_count',
-                       'transmission', 'transmission_display', 'wheel_system']
+    col_names_dummy = ['body_type', 'engine_cylinders', 'engine_type', 'exterior_color',
+                       'franchise_dealer', 'fuel_type', 'has_accidents', 'interior_color',
+                       'isCab', 'listing_color', 'make_name', 'maximum_seating',
+                       'owner_count', 'transmission', 'transmission_display',
+                       'wheel_system']
 
     data_processing = {'X': 'standardize', 'Y': 'log'}
 
@@ -261,7 +261,7 @@ for file_no_i in range(n_files):
 
         # Run a pilot model with sampled data from Spark. Note: statsmodels does not support sparse matrix, TERRIBLE!
         if len(col_names_dummy) > 0:
-            onehot_column_names = ['_'.join([key, values_i])
+            onehot_column_names = ['_'.join([key, str(values_i)])
                                   for key in dummy_info['factor_selected_names'].keys()
                                   for values_i in dummy_info['factor_selected_names'][key]]
             XY_pilot_pdf_i = spark_onehot_to_pd_dense(pdf=XY_pilot_pdf_i,
