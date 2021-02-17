@@ -36,6 +36,7 @@ from dqr.utils_spark import spark_onehot_to_pd_dense
 from dqr.models import qr_asymptotic_comp
 from dqr.memory import commcost_estimate
 from statsmodels.regression.quantile_regression import QuantReg
+from scipy import stats
 
 # System functions
 import sys, time
@@ -58,7 +59,7 @@ import pandas as pd
 # ----------------------------------------------------------------------------------------
 using_data = "real_hdfs"  # ["simulated_pdf", "real_pdf", "real_hdfs"
 partition_method = "systematic"
-model_saved_file_name = '~/running/dqr_model_' + '_'.join(sys.argv) + '_' + time.strftime("%Y%m%d-%H.%M.%S", time.localtime())
+model_saved_file_name = '~/running/dqr_model_' + '_'.join(sys.argv[1:]) + '_' + time.strftime("%Y%m%d-%H.%M.%S", time.localtime())
 
 # If save data descriptive statistics
 data_info_path = {
@@ -90,9 +91,9 @@ if using_data in ["real_hdfs"]:
                 'seller_rating', 'wheelbase', 'width', 'year' ]
 
     dummy_names = ['body_type', 'engine_cylinders', 'exterior_color', 'franchise_dealer',
-                   'fuel_type', 'has_accidents', 'interior_color', 'isCab',
-                   'listing_color', 'make_name', 'maximum_seating', 'owner_count',
-                   'transmission', 'transmission_display', 'wheel_system']
+                   'fuel_type', 'has_accidents', 'interior_color', 'isCab', 'make_name',
+                   'maximum_seating', 'owner_count', 'transmission_display',
+                   'wheel_system']
 
     # dummy_names = []  # no dummy variable used
     dummy_keep_top = [0.5] * len(dummy_names) #, 0.9]
@@ -366,13 +367,31 @@ for file_no_i in range(n_files):
         f_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_sum[-1]
         out_beta = dqr_pilot_res.params + f_hat_inv * XTX_inv.dot(qr_comp_sum[:-1])
 
+        # Step 5: Asymptotic covariance
+        out_beta_cov = XTX_inv * sample_size * dqr_conf['quantile'] * (1 - dqr_conf['quantile']) * f_hat_inv**2
+        out_beta_var = out_beta_cov.diagonal() / np.sqrt(sample_size)
+        out_beta_se = np.sqrt(out_beta_var)
+
+        # P-values for significance
+        out_beta_p_values =[2*(1-stats.t.cdf(np.abs(i),sample_size-len(out_beta))) for i in out_beta / out_beta_se]
+
+        # Output
+        out_dqr = pd.concat([out_beta,
+                             pd.DataFrame(out_beta_var,index=out_beta.index),
+                             pd.DataFrame(out_beta_se,index=out_beta.index),
+                             pd.DataFrame(out_beta_p_values,index=out_beta.index)],
+                            axis=1)
+        out_dqr.columns = ['beta', 'var', 'se', 'p_values']
     # ---------------------------------------------------------------------------------------
     # PRINT OUTPUT
     # ---------------------------------------------------------------------------------------
     out = {'dqr_pilot_res': dqr_pilot_res,
            'data_info': data_info,
            # 'dummy_info': dummy_info,
+           'out_dqr': out_dqr,
            'out_beta': out_beta,
+           'out_beta_cov': out_beta_cov,
+           'out_beta_var': out_beta_var,
            'dummy_names': dummy_names,
            'X_names': X_names,
            'X_names_full': column_names_x_full,
@@ -383,9 +402,4 @@ for file_no_i in range(n_files):
 
     pickle.dump(out, open(os.path.expanduser(model_saved_file_name + '.pkl'), 'wb'))
     # json.dump(out, open(os.path.expanduser(model_saved_file_name + '.json'), 'w'))
-
     print("Model results are saved to:\t" + model_saved_file_name + '.pkl')
-
-
-    print("\nDQR Coefficients:\n")
-    # print(out_par.to_string())
