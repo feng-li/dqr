@@ -87,13 +87,13 @@ if using_data in ["real_hdfs"]:
     col_names_x = [ 'back_legroom', 'city_fuel_economy', 'daysonmarket',
                     'engine_cylinders', 'engine_displacement', 'front_legroom',
                     'fuel_tank_volume', 'height', 'highway_fuel_economy', 'horsepower',
-                    'length',  'major_options', 'make_name', 'mileage',
-                    'price', 'seller_rating', 'wheelbase', 'width', 'year' ]
+                    'length', 'major_options', 'mileage', 'price', 'seller_rating',
+                    'wheelbase', 'width', 'year' ]
 
     col_names_dummy = ['body_type', 'engine_type', 'exterior_color', 'franchise_dealer',
                        'fuel_type', 'has_accidents', 'interior_color', 'isCab',
                        'listing_color', 'make_name', 'maximum_seating', 'owner_count',
-                       'transmission', 'transmission_display', 'wheel_system', ]
+                       'transmission', 'transmission_display', 'wheel_system']
 
     dummy_keep_top = [0.5] * len(col_names_dummy) #, 0.9]
 
