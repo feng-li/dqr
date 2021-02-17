@@ -58,8 +58,7 @@ import pandas as pd
 # ----------------------------------------------------------------------------------------
 using_data = "real_hdfs"  # ["simulated_pdf", "real_pdf", "real_hdfs"
 partition_method = "systematic"
-model_saved_file_name = '~/running/dqr_model_' + time.strftime(
-    "%Y%m%d-%H.%M.%S", time.localtime())
+model_saved_file_name = '~/running/dqr_model_' + '_'.join(sys.argv) + '_' + time.strftime("%Y%m%d-%H.%M.%S", time.localtime())
 
 # If save data descriptive statistics
 data_info_path = {
@@ -74,7 +73,8 @@ fit_algorithms = ['dqr']
 dqr_conf = {
     'fit_intercept': True,
     'pilot_sampler': 0.01,
-    'quantile': 0.25
+    # 'quantile': 0.025,
+    'quantile': float(sys.argv[1])
 }
 
 #  Settings for using real data
@@ -84,20 +84,20 @@ if using_data in ["real_hdfs"]:
     file_path = ['/data/used_cars_data_clean.csv']  # HDFS file
 
     Y_name = "price"
-    col_names_x = [ 'back_legroom', 'city_fuel_economy', 'daysonmarket',
-                    'engine_displacement', 'front_legroom', 'fuel_tank_volume', 'height',
-                    'highway_fuel_economy', 'horsepower', 'length', 'mileage',
-                    'seller_rating', 'wheelbase', 'width', 'year' ]
+    X_names = [ 'back_legroom', 'city_fuel_economy', 'daysonmarket',
+                'engine_displacement', 'front_legroom', 'fuel_tank_volume', 'height',
+                'highway_fuel_economy', 'horsepower', 'length', 'mileage',
+                'seller_rating', 'wheelbase', 'width', 'year' ]
 
-    col_names_dummy = ['body_type', 'engine_cylinders', 'engine_type', 'exterior_color',
-                       'franchise_dealer', 'fuel_type', 'has_accidents', 'interior_color',
-                       'isCab', 'listing_color', 'make_name', 'maximum_seating',
-                       'owner_count', 'transmission', 'transmission_display',
-                       'wheel_system']
+    dummy_names = ['body_type', 'engine_cylinders', 'exterior_color', 'franchise_dealer',
+                   'fuel_type', 'has_accidents', 'interior_color', 'isCab',
+                   'listing_color', 'make_name', 'maximum_seating', 'owner_count',
+                   'transmission', 'transmission_display', 'wheel_system']
+
+    # dummy_names = []  # no dummy variable used
+    dummy_keep_top = [0.5] * len(dummy_names) #, 0.9]
 
     data_processing = {'X': 'standardize', 'Y': 'log'}
-
-    dummy_keep_top = [0.5] * len(col_names_dummy) #, 0.9]
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
                               StructField('back_legroom', DoubleType(), True),
@@ -163,7 +163,7 @@ if using_data in ["real_hdfs"]:
 
     sample_size_per_partition = 100000
 
-
+    commcost = False
 # Read or load data chunks into pandas
 # ----------------------------------------------------------------------------------------
 n_files = len(file_path)
@@ -183,10 +183,13 @@ for file_no_i in range(n_files):
                                 header=True,
                                 schema=schema_sdf)
 
-    out_commcost = commcost_estimate(sdf=data_sdf_i,
-                                     fractions=[x/10 for x in range(10)][1:])
+    if commcost:
+        out_commcost = commcost_estimate(sdf=data_sdf_i,
+                                         fractions=[x/10 for x in range(10)][1:])
+    else:
+        out_commcost = []
 
-    XY_sdf_i = data_sdf_i.select(col_names_x + [Y_name] + col_names_dummy)
+    XY_sdf_i = data_sdf_i.select(X_names + [Y_name] + dummy_names)
     XY_sdf_i = XY_sdf_i.dropna()
 
     sample_size_sub.append(XY_sdf_i.count())
@@ -213,25 +216,32 @@ for file_no_i in range(n_files):
     else:
         # Load data info
         data_info = pd.read_csv(os.path.expanduser(data_info_path["path"]))
-        print("Descriptive statistics for data are loaded from file:\t" +
+        print("Descriptive statistics for data loaded from file:\t" +
               data_info_path["path"])
 
     # Obtain ONEHOT encoding
-    if len(col_names_dummy) > 0:
+    if len(dummy_names) > 0:
         # Retrieve dummy information
         if dummy_info_path["save"] is True:
             dummy_info = []
-            print("Dummy and information will be created and saved to disk!")
         else:
             dummy_info = pickle.load(
                 open(os.path.expanduser(dummy_info_path["path"]), "rb"))
+            print("Dummy information loaded from file:\t" +
+                  dummy_info_path["path"])
 
         XY_sdf_i, dummy_info = get_sdummies(sdf=XY_sdf_i,
                                               keep_top=dummy_keep_top,
                                               replace_with="000_OTHERS",
-                                              dummy_columns=col_names_dummy,
+                                              dummy_columns=dummy_names,
                                               dummy_info=dummy_info,
                                               dropLast=dqr_conf['fit_intercept'])
+
+        if dummy_info_path["save"] is True:
+            pickle.dump(dummy_info, open(os.path.expanduser(dummy_info_path["path"]), 'wb'))
+            print("Dummy information created and saved to file:\t" +
+                  dummy_info_path["path"])
+
 
     # Independent fit chunked data with UDF.
     if 'dqr' in fit_algorithms:
@@ -241,16 +251,17 @@ for file_no_i in range(n_files):
         # Standardize non-categorical columns
         sample_size = int(data_info.iloc[0,1])
         if data_processing['X'] == 'standardize':
-            for non_dummy_col in col_names_x:
-                XY_sdf_i.withColumn(non_dummy_col,(F.col(non_dummy_col)-data_info[non_dummy_col][1])/data_info[non_dummy_col][2])
+            for non_dummy_col in X_names:
+                XY_sdf_i = XY_sdf_i.withColumn(non_dummy_col,
+                                               (F.col(non_dummy_col)-data_info[non_dummy_col][1])/data_info[non_dummy_col][2])
 
         # Transformation of response variable
         if data_processing['Y'] == 'log':
-            XY_sdf_i.withColumn(Y_name,F.log(F.col(Y_name)))
+            XY_sdf_i = XY_sdf_i.withColumn(Y_name, F.log(F.col(Y_name)))
 
         # Add the intercept column
         if dqr_conf['fit_intercept']:
-            col_names_x.insert(0, 'Intercept')
+            X_names.insert(0, 'Intercept')
             XY_sdf_i = XY_sdf_i.withColumn('Intercept', F.lit(1))
 
         # Step 1: Pilot Sampler
@@ -260,7 +271,7 @@ for file_no_i in range(n_files):
         XY_pilot_pdf_i = XY_pilot_sdf_i.toPandas()  # Send to master
 
         # Run a pilot model with sampled data from Spark. Note: statsmodels does not support sparse matrix, TERRIBLE!
-        if len(col_names_dummy) > 0:
+        if len(dummy_names) > 0:
             onehot_column_names = ['_'.join([key, str(values_i)])
                                   for key in dummy_info['factor_selected_names'].keys()
                                   for values_i in dummy_info['factor_selected_names'][key]]
@@ -271,10 +282,18 @@ for file_no_i in range(n_files):
         else:
             onehot_column_names = []
 
-        column_names_x_full = col_names_x + onehot_column_names
+        column_names_x_full = X_names + onehot_column_names
+
+        # statsmodels.quantile_regression is picky about covariates. 1. All covariates
+        # must be float, and int dummies are not allowed. 2. Multicolineared covariates
+        # will give error.
         dqr_pilot = QuantReg(endog=XY_pilot_pdf_i[Y_name],
                              exog=(XY_pilot_pdf_i[column_names_x_full]).astype(float))
         dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
+
+        # dqr_pilot = QuantReg(endog=XY_pilot_pdf_i[Y_name],
+        #                      exog=(XY_pilot_pdf_i[column_names_x_full[:21] + column_names_x_full[24:]]).astype(float))
+        # dqr_pilot_res = dqr_pilot.fit(q=dqr_conf['quantile'])
 
         dqr_pilot_par = {
             'bandwidth': dqr_pilot_res.bandwidth,
@@ -295,7 +314,7 @@ for file_no_i in range(n_files):
         @pandas_udf(schema_XTX, F.PandasUDFType.GROUPED_MAP)
         def XTX_udf(pdf):
             # Convert Spark ONEHOT encoded column into Pandas dense DataFrame
-            if len(col_names_dummy) > 0:
+            if len(dummy_names) > 0:
                 pdf_dense = spark_onehot_to_pd_dense(
                     pdf=pdf,
                     onehot_column='features_ONEHOT',
@@ -313,7 +332,7 @@ for file_no_i in range(n_files):
                                      for i in range(Xdim + 1)])
         @pandas_udf(schema_qr_comp, F.PandasUDFType.GROUPED_MAP)
         def qr_asymptotic_comp_udf(pdf):
-            if len(col_names_dummy) > 0:
+            if len(dummy_names) > 0:
                 pdf_dense = spark_onehot_to_pd_dense(
                     pdf=pdf,
                     onehot_column='features_ONEHOT',
@@ -354,9 +373,9 @@ for file_no_i in range(n_files):
            'data_info': data_info,
            # 'dummy_info': dummy_info,
            'out_beta': out_beta,
-           'col_names_dummy': col_names_dummy,
-           'col_names_x': col_names_x,
-           'col_names_x_full': column_names_x_full,
+           'dummy_names': dummy_names,
+           'X_names': X_names,
+           'X_names_full': column_names_x_full,
            'commcost': out_commcost
     }
     print("\nModel Summary:\n")
@@ -365,11 +384,8 @@ for file_no_i in range(n_files):
     pickle.dump(out, open(os.path.expanduser(model_saved_file_name + '.pkl'), 'wb'))
     # json.dump(out, open(os.path.expanduser(model_saved_file_name + '.json'), 'w'))
 
-    print("Model results are saved to:\t" + model_saved_file_name)
+    print("Model results are saved to:\t" + model_saved_file_name + '.pkl')
 
-
-    print("\nModel Evaluation:")
-    print("\tlog likelihood:\n")
 
     print("\nDQR Coefficients:\n")
     # print(out_par.to_string())
