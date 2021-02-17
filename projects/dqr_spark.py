@@ -95,6 +95,8 @@ if using_data in ["real_hdfs"]:
                        'listing_color', 'make_name', 'maximum_seating', 'owner_count',
                        'transmission', 'transmission_display', 'wheel_system']
 
+    data_processing = {'X': 'standardize', 'Y': 'log'}
+
     dummy_keep_top = [0.5] * len(col_names_dummy) #, 0.9]
 
     schema_sdf = StructType([ StructField('vin', StringType(), True),
@@ -238,8 +240,13 @@ for file_no_i in range(n_files):
 
         # Standardize non-categorical columns
         sample_size = int(data_info.iloc[0,1])
-        for non_dummy_col in col_names_x:
-            XY_sdf_i.withColumn(non_dummy_col,(F.col(non_dummy_col)-data_info[non_dummy_col][1])/data_info[non_dummy_col][2])
+        if data_processing['X'] == 'standardize':
+            for non_dummy_col in col_names_x:
+                XY_sdf_i.withColumn(non_dummy_col,(F.col(non_dummy_col)-data_info[non_dummy_col][1])/data_info[non_dummy_col][2])
+
+        # Transformation of response variable
+        if data_processing['Y'] == 'log':
+            XY_sdf_i.withColumn(Y_name,F.log(F.col(Y_name)))
 
         # Add the intercept column
         if dqr_conf['fit_intercept']:
