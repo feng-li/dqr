@@ -329,9 +329,9 @@ for file_no_i in range(n_files):
         XTX_sdf = XY_sdf_i.groupby("partition_id").apply(XTX_udf)
 
         # Register a user defined function via the Pandas UDF
-        schema_qr_comp = StructType([StructField(str(i), DoubleType(), True)
+        schema_qr_comp_full = StructType([StructField(str(i), DoubleType(), True)
                                      for i in range(Xdim + 1)])
-        @pandas_udf(schema_qr_comp, F.PandasUDFType.GROUPED_MAP)
+        @pandas_udf(schema_qr_comp_full, F.PandasUDFType.GROUPED_MAP)
         def qr_asymptotic_comp_udf(pdf):
             if len(dummy_names) > 0:
                 pdf_dense = spark_onehot_to_pd_dense(
@@ -347,7 +347,7 @@ for file_no_i in range(n_files):
                 beta0=dqr_pilot_res.params,
                 quantile=dqr_conf['quantile'],
                 bandwidth=dqr_pilot_res.bandwidth,
-                Y_name=Y_name)
+                Y_name=Y_name, out='all')
 
         # partition the data and run the UDF
         qr_comp_sdf = XY_sdf_i.groupby("partition_id").apply(qr_asymptotic_comp_udf)
@@ -364,12 +364,37 @@ for file_no_i in range(n_files):
 
         # Step 4: One-step updating coefficients
         qr_comp_sum = np.sum(qr_comp, axis=0)
-        f_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_sum[-1]
-        out_beta = dqr_pilot_res.params + f_hat_inv * XTX_inv.dot(qr_comp_sum[:-1])
+        f0_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_sum[-1]
+        out_beta = dqr_pilot_res.params + f0_hat_inv * XTX_inv.dot(qr_comp_sum[:-1])
 
         # Step 5: Asymptotic covariance
-        out_beta_cov = XTX_inv * sample_size * dqr_conf['quantile'] * (1 - dqr_conf['quantile']) * f_hat_inv**2
-        out_beta_var = out_beta_cov.diagonal() / np.sqrt(sample_size)
+        # Register a user defined function via the Pandas UDF
+        schema_qr_comp_f0 = StructType([StructField('f0', DoubleType())])
+        @pandas_udf(schema_qr_comp_f0, F.PandasUDFType.GROUPED_MAP)
+        def qr_asymptotic_comp_f1_udf(pdf):
+            if len(dummy_names) > 0:
+                pdf_dense = spark_onehot_to_pd_dense(
+                    pdf=pdf,
+                    onehot_column='features_ONEHOT',
+                    onehot_column_names=onehot_column_names,
+                    onehot_column_is_sparse=False)
+            else:
+                pdf_dense = pdf
+            return qr_asymptotic_comp(
+                pdf=pdf_dense[column_names_x_full + [Y_name]],
+                # pdf=X_sdf.drop('partition_id', axis=1),
+                beta0=out_beta,
+                quantile=dqr_conf['quantile'],
+                bandwidth=dqr_pilot_res.bandwidth,
+                Y_name=Y_name, out='f0')
+
+        # partition the data and run the UDF
+        qr_comp_f1_sdf = XY_sdf_i.groupby("partition_id").apply(qr_asymptotic_comp_f1_udf)
+        qr_comp_f1 = qr_comp_f1_sdf.toPandas().to_numpy()
+        qr_comp_f1_sum = np.sum(qr_comp_f1, axis=0)
+        f1_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_f0_sum
+        out_beta_cov = XTX_inv * sample_size * dqr_conf['quantile'] * (1 - dqr_conf['quantile']) * f1_hat_inv**2
+        out_beta_var = out_beta_cov.diagonal() #/ np.sqrt(sample_size)
         out_beta_se = np.sqrt(out_beta_var)
 
         # P-values for significance
@@ -377,11 +402,13 @@ for file_no_i in range(n_files):
 
         # Output
         out_dqr = pd.concat([out_beta,
+                             dqr_pilot_res.params,
                              pd.DataFrame(out_beta_var,index=out_beta.index),
                              pd.DataFrame(out_beta_se,index=out_beta.index),
-                             pd.DataFrame(out_beta_p_values,index=out_beta.index)],
+                             pd.DataFrame(out_beta_p_values,index=out_beta.index),
+                             dqr_pilot_res.pvalues],
                             axis=1)
-        out_dqr.columns = ['beta', 'var', 'se', 'p_values']
+        out_dqr.columns = ['beta_dqr', 'beta_pilot', 'var_dqr', 'se_dqr', 'pvalues_dqr', 'pvalues_pilot']
     # ---------------------------------------------------------------------------------------
     # PRINT OUTPUT
     # ---------------------------------------------------------------------------------------
