@@ -63,7 +63,7 @@ model_saved_file_name = '~/running/dqr_model_' + '_'.join(sys.argv[1:]) + '_' + 
 
 # If save data descriptive statistics
 data_info_path = {
-    'save': True,
+    'save': False,
     'path': "~/running/data/used_cars_data/data_info.csv"
 }
 

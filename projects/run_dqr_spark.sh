@@ -29,7 +29,8 @@ cd -;
 
 tic0=`date +%Y%m%d-%H.%M.%S`
 # for executors in {256..4..-4}
-for executors in 32
+executors=32
+for quantile in 0.1 0.25 0.5 0.75 0.9
 do
     tic=`date +%s`
     PYSPARK_PYTHON=python3.7 ARROW_PRE_0_15_IPC_FORMAT=1 spark-submit \
@@ -39,7 +40,8 @@ do
                   --driver-memory 50g    \
                   --executor-cores ${EC}    \
                   --conf spark.rpc.message.maxSize=2000 \
-                  $DIR/${MODEL_FILE}.py "$@"
+                  $DIR/${MODEL_FILE}.py ${quantile}
+#                  $DIR/${MODEL_FILE}.py "$@"
 #                  > ${OUTPATH}${MODEL_DESCRIPTION}_${MODEL_FILE}.NE${executors}.EC${EC}_${tic0}.out 2> ${OUTPATH}${MODEL_DESCRIPTION}_${MODEL_FILE}.NE${executors}.EC${EC}_${tic0}.log
     toc=`date +%s`
     runtime=$((toc-tic))
