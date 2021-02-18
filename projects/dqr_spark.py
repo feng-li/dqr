@@ -150,7 +150,7 @@ if using_data in ["real_hdfs"]:
                               StructField('year', DoubleType(), True) ])
 
     dummy_info_path = {
-        # 'save': True,  # If False, load it from the path
+        # 'save': False,  # If False, load it from the path
         'save': True,  # If False, load it from the path
         'path': "~/running/data/used_cars_data/dummy_info.pkl"
     }
@@ -369,8 +369,8 @@ for file_no_i in range(n_files):
 
         # Step 5: Asymptotic covariance
         # Register a user defined function via the Pandas UDF
-        schema_qr_comp_f0 = StructType([StructField('f0', DoubleType())])
-        @pandas_udf(schema_qr_comp_f0, F.PandasUDFType.GROUPED_MAP)
+        schema_qr_comp_f1 = StructType([StructField('f1', DoubleType())])
+        @pandas_udf(schema_qr_comp_f1, F.PandasUDFType.GROUPED_MAP)
         def qr_asymptotic_comp_f1_udf(pdf):
             if len(dummy_names) > 0:
                 pdf_dense = spark_onehot_to_pd_dense(
