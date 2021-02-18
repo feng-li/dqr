@@ -150,8 +150,8 @@ if using_data in ["real_hdfs"]:
                               StructField('year', DoubleType(), True) ])
 
     dummy_info_path = {
-        # 'save': False,  # If False, load it from the path
-        'save': True,  # If False, load it from the path
+        'save': False,  # If False, load it from the path
+        # 'save': True,  # If False, load it from the path
         'path': "~/running/data/used_cars_data/dummy_info.pkl"
     }
 
@@ -392,7 +392,7 @@ for file_no_i in range(n_files):
         qr_comp_f1_sdf = XY_sdf_i.groupby("partition_id").apply(qr_asymptotic_comp_f1_udf)
         qr_comp_f1 = qr_comp_f1_sdf.toPandas().to_numpy()
         qr_comp_f1_sum = np.sum(qr_comp_f1, axis=0)
-        f1_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_f0_sum
+        f1_hat_inv = sample_size * dqr_pilot_res.bandwidth / qr_comp_f1_sum
         out_beta_cov = XTX_inv * sample_size * dqr_conf['quantile'] * (1 - dqr_conf['quantile']) * f1_hat_inv**2
         out_beta_var = out_beta_cov.diagonal() #/ np.sqrt(sample_size)
         out_beta_se = np.sqrt(out_beta_var)
