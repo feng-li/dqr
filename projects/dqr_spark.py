@@ -97,6 +97,7 @@ if using_data in ["real_hdfs"]:
 
     # dummy_names = []  # no dummy variable used
     dummy_keep_top = [0.5] * len(dummy_names) #, 0.9]
+    dummy_keep_top[2] = 0.3 # exterior_color
 
     data_processing = {'X': 'standardize', 'Y': 'log'}
 
