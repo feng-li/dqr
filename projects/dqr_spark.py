@@ -151,8 +151,8 @@ if using_data in ["real_hdfs"]:
                               StructField('year', DoubleType(), True) ])
 
     dummy_info_path = {
-        'save': False,  # If False, load it from the path
-        # 'save': True,  # If False, load it from the path
+        # 'save': False,  # If False, load it from the path
+        'save': True,  # If False, load it from the path
         'path': "~/running/data/used_cars_data/dummy_info.pkl"
     }
 
