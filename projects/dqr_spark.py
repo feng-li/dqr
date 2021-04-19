@@ -163,7 +163,7 @@ if using_data in ["real_hdfs"]:
     # else:
     #     dummy_factors_baseline = []
 
-    sample_size_per_partition = 100000
+    sample_size_per_partition = 10000
 
     commcost = False
 # Read or load data chunks into pandas
