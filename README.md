@@ -49,3 +49,7 @@ python setup.py bdist
   - `dqr/R/uilts.R`: other functions used
   - `projects/dqr_demo.R`: generate data, conduct estimation and generate plot. Please run
     `dqr_demo.R` to see how to use the functions.
+
+# References
+
+- Rui Pan, Tunan Ren, [Baishan Guo](https://github.com/edwardguo61/), [Feng Li](https://feng.li/), Guodong Li and Hansheng Wang (2021). A Note on Distributed Quantile Regression by Pilot Sampling and One-Step Updating, _Working paper_. 
