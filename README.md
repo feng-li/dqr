@@ -52,4 +52,4 @@ python setup.py bdist
 
 # References
 
-- Rui Pan, Tunan Ren, [Baishan Guo](https://github.com/edwardguo61/), [Feng Li](https://feng.li/), Guodong Li and Hansheng Wang (2021). A Note on Distributed Quantile Regression by Pilot Sampling and One-Step Updating, _Journal of Business and Economic Statistics_. (in press). 
+- Rui Pan, Tunan Ren, [Baishan Guo](https://github.com/edwardguo61/), [Feng Li](https://feng.li/), Guodong Li and Hansheng Wang (2021). [A Note on Distributed Quantile Regression by Pilot Sampling and One-Step Updating](https://doi.org/10.1080/07350015.2021.1961789), _Journal of Business and Economic Statistics_. (in press). 
