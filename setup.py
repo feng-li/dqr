@@ -7,8 +7,7 @@ def read(file):
     return open(os.path.join(os.path.dirname(__file__), file)).read()
 
 
-# Pyspark dose not allow for tar.gz module to attach, silly... Override sdist to always
-# produce .zip archive
+# Pyspark does not allow for tar.gz module to attach, silly... Override sdist to always produce .zip archive
 class sdistzip(_sdist):
     def initialize_options(self):
         _sdist.initialize_options(self)
