@@ -57,7 +57,7 @@ columns_keep = [
 columns_keep_index = [
     columns_raw.index(columns_keep[i]) for i in range(len(columns_keep))
 ]
-# columns_keep_index = [0, 1, 5, 7, 8, 10, 11, 13, 14, 15, 16, 19, 21, 22, 23, 25, 26, 27,
+# columns_keep_index = [0, 1, 5, 7, 8, 10, 11, 13, 14, 15, 16, 19, 21, 22, 23, 24, 25, 26, 27,
 #                       28, 34, 36, 37, 38, 39, 41, 42, 43, 44, 45, 46, 47, 48, 50, 51, 52,
 #                       53, 55, 56, 57, 58, 59, 61, 63, 64, 65]
 
@@ -237,7 +237,7 @@ with zipfile.ZipFile(data_file, 'r') as z:
                 x = line_raw[64].split()[0]
                 x = x.replace('--', '')
                 # x = float(x)
-            line_raw[64] = x
+                line_raw[64] = x
 
             # 65 Year
 
