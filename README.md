@@ -3,6 +3,24 @@ _by Pilot Sampling and One-Step Updating_
 
 # Spark implementation
 
+## Modern `dstats` Interface
+
+This directory keeps the original DQR implementation and examples for
+reference. New development is moving to the unified `dstats` package at
+<https://github.com/feng-li/dstats>.
+
+The migrated Spark 4 interface is available from `dstats.dqr` and uses the
+current PySpark `applyInPandas` API. The first migrated interface covers dense
+numeric quantile-regression data with pilot sampling and one-step updating.
+
+Typical usage in the new package is:
+
+```py
+from dstats.dqr import dqr_fit
+from dstats.dqr import fit_quantile_partitions
+from dstats.dqr import qr_asymptotic_components
+```
+
 ## System Requirements
 
 - `Spark >= 2.3.1`
